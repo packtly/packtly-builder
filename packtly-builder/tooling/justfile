@@ -1,0 +1,74 @@
+default: list
+
+list:
+    @just --list
+
+prepare:
+    #!/usr/bin/env sh
+    set -eu
+
+    if ! command -v poetry >/dev/null 2>&1; then
+        echo "Please install poetry first: scripts/setup_venv" >&2
+        exit 1
+    fi
+
+    if ! command -v parse_pip_conf.py >/dev/null 2>&1; then
+        echo "parse_pip_conf.py not found in PATH" >&2
+        exit 1
+    fi
+
+    # Load pip credentials
+    eval "$(parse_pip_conf.py -i0 /etc/pip.conf)"
+
+    if [ -z "${PIP_USERNAME:-}" ] || [ -z "${PIP_PASSWORD:-}" ]; then
+        echo "Please set up your pip config (/etc/pip.conf)" >&2
+        exit 1
+    fi
+
+    # Configure poetry (avoid re-writing if already set)
+    poetry config http-basic.aptlyapipypi "$PIP_USERNAME" "$PIP_PASSWORD"
+    poetry config http-basic.gitlab "$PIP_USERNAME" "$PIP_PASSWORD"
+
+    # Local project settings
+    poetry config virtualenvs.options.system-site-packages true --local
+
+    poetry install --no-interaction --with dev
+
+[private]
+_ensure-dev-env:
+    #!/usr/bin/env sh
+    set -eu
+
+    if ! poetry run python -c "import pytest, mypy, flake8" >/dev/null 2>&1; then
+        echo "Dev environment missing or broken → running 'just prepare'"
+        just prepare
+    fi
+
+[private]
+_run-dev +command:
+    just _ensure-dev-env
+    poetry run {{command}}
+
+test:
+    just flake8
+    just mypy
+    just pytest
+
+pytest:
+    just _run-dev pytest
+
+mypy:
+    just _run-dev mypy
+
+flake8:
+    just _run-dev flake8
+
+black:
+    just _run-dev black .
+
+build:
+    just _ensure-dev-env
+    poetry build
+
+test-keys:
+    gen_gpg --name embtom --email xxx@mail.com --pass 1234
