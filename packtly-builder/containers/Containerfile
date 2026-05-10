@@ -1,0 +1,113 @@
+######################
+# Base image (common base for all stages)
+
+#ARG BASE=debian:trixie-slim
+ARG BASE=tomhp.fritz.box:5555/devops/containerfiles/trixie_ca:2
+FROM ${BASE} AS base
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VERSION=dev
+ARG CONTEXT_ROOT=.
+
+LABEL version=$VERSION \
+  maintainer="t.willetal@gmail.com"
+
+ENV \
+  TZ=Europe/Berlin \
+  LANG=en_US.UTF-8 \
+  LC_ALL=en_US.UTF-8 \
+  LANGUAGE=en_US.UTF-8 \
+  GNUPGHOME=/etc/gnupg \
+  PIP_ROOT_USER_ACTION=ignore \
+  PIP_BREAK_SYSTEM_PACKAGES=1
+
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends \
+  build-essential \
+  debhelper \
+  devscripts \
+  lintian \
+  piuparts \
+  dh-python \
+  dh-cmake \
+  dh-make \
+  debootstrap \
+  equivs \
+  fakeroot \
+  gnupg2 \
+  gpg-agent \
+  git \
+  curl \
+  wget \
+  python3 \
+  python3-pip \
+  python3-apt \
+  dumb-init \
+  locales \
+  ca-certificates \
+  ssh \
+  iproute2 \
+  iputils-ping \
+  nano && \
+  echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+  locale-gen && \
+  rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /etc/gnupg && chmod 700 /etc/gnupg
+
+# GPG config
+COPY ${CONTEXT_ROOT}/conf/gpg/gpg.conf /etc/gnupg/gpg.conf
+COPY ${CONTEXT_ROOT}/conf/gpg/gpg-agent.conf /etc/gnupg/gpg-agent.conf
+COPY ${CONTEXT_ROOT}/conf/gpg/S.gpg-agent /etc/gnupg/S.gpg-agent
+COPY ${CONTEXT_ROOT}/conf/rtprio.conf /etc/security/limits.d/
+
+######################
+# Build stage (for building the wheel)
+
+FROM base AS build
+ARG CONTEXT_ROOT=.
+
+# Use a virtualenv in the build stage so Poetry is isolated from system packages
+# but include system site packages so Debian-only modules like python3-apt are importable.
+ENV POETRY_VIRTUALENVS_CREATE=true \
+  POETRY_VIRTUALENVS_OPTIONS_SYSTEM_SITE_PACKAGES=true \
+  POETRY_VIRTUALENVS_PATH=/opt/poetry-venvs
+
+RUN apt-get update && \
+  apt-get install --yes --no-install-recommends \
+  bash-completion \
+  just \
+  starship \
+  python3-poetry && \
+  rm -rf /var/lib/apt/lists/*
+
+RUN echo "eval \"\$(starship init bash)\"" >> /etc/bash.bashrc \
+  && echo '[[ -f /usr/share/bash-completion/bash_completion ]]' \
+    '&& source /usr/share/bash-completion/bash_completion' >> /etc/bash.bashrc \
+  && poetry completions bash > /etc/bash_completion.d/poetry
+
+RUN curl -sSL https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64 \
+  -o /usr/local/bin/hadolint && chmod +x /usr/local/bin/hadolint
+
+COPY ${CONTEXT_ROOT}/scripts/parse_pip_conf.py /usr/local/bin/parse_pip_conf.py
+COPY ${CONTEXT_ROOT}/scripts/gen_gpg /usr/local/bin/gen_gpg
+COPY ${CONTEXT_ROOT}/scripts/gen_ssh /usr/local/bin/gen_ssh
+
+RUN --mount=type=bind,source=tooling,target=/tmp/tooling,rw \
+  --mount=type=secret,id=pip.conf,target=/etc/pip.conf \
+  cd /tmp/tooling && \
+  just prepare
+
+CMD ["/usr/bin/bash"]
+
+######################
+# Final packtly-builder image (runtime image)
+
+FROM base AS image
+
+# Wheel is produced by the build stage - no host-side artifact required
+RUN --mount=type=bind,source=tooling,target=/tmp/tooling \
+  --mount=type=secret,id=pip.conf,target=/etc/pip.conf \
+  pip install --no-cache-dir /tmp/tooling/dist/*.whl
+
+ENTRYPOINT [ "/usr/local/bin/packtly_builder_tooling" ]

@@ -1,0 +1,5 @@
+#!/bin/bash
+
+APTLY_DIR="/opt/keys"
+mkdir -p $APTLY_DIR/ssh
+ssh-keygen -C noname -q -t ed25519 -N '' -f $APTLY_DIR/ssh/id_ed25519
