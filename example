@@ -1,0 +1,20 @@
+#!/bin/bash
+set -eu
+
+TOPDIR="$(git rev-parse --show-toplevel)"
+#CONTAINER_NAME="tomhp.fritz.box:5555/devops/pbuilder/staging/debian_bookworm:a24fcc9d"
+#CONTAINER_NAME="pbuilder_jammy_arm64:dev"
+CONTAINER_NAME="pbuilder_jammy_amd64:dev"
+CONTAINER_RUN_OPTIONS=" \
+   --network=host \
+   --env APTLYHOST=http://localhost:8080 \
+   -v $TOPDIR/Keys:/opt/keys \
+   -v $TOPDIR:$TOPDIR \
+   $CONTAINER_NAME"
+
+podman run \
+    --rm \
+    ${CONTAINER_RUN_OPTIONS} \
+    --dist=jammy-apollo \
+    --component=main \
+    $TOPDIR/Test/debhello
