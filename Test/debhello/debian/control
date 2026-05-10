@@ -1,0 +1,18 @@
+Source: debhello
+Section: non-free/graphics
+Priority: optional
+Maintainer: Thomas Willetal <t.willetal@gmx.de>
+Build-Depends: debhelper (>=12),
+               libgtest-dev
+Standards-Version: 3.9.6
+
+Package: debhello
+Architecture: any
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: example package in the debmake-doc package
+ This is an example package to demonstrate the Debian packaging using
+ the debmake command.
+ .
+ The generated Debian package uses the dh command offered by the
+ debhelper package and the dpkg source format `3.0 (quilt)'.
