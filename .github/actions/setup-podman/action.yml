@@ -1,0 +1,102 @@
+---
+name: "Setup Podman Environment"
+description: "Prepare Podman for rootless builds"
+
+runs:
+  using: "composite"
+  steps:
+
+    - name: Remove Docker if installed
+      shell: bash
+      run: |
+        if command -v docker >/dev/null 2>&1; then
+          echo "Docker found removing"
+          sudo systemctl stop docker docker.socket || true
+          sudo apt-get purge -y \
+            docker \
+            docker.io \
+            docker-ce \
+            docker-ce-cli \
+            containerd runc || true
+          sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/docker /var/lib/containerd
+        else
+          echo "Docker not installed"
+        fi
+
+    - name: Cache apt packages
+      uses: actions/cache@v4
+      with:
+        path: ~/apt-cache
+        key: apt-podman-${{ runner.os }}-${{ hashFiles('.github/actions/setup-podman/action.yml') }}
+        restore-keys: apt-podman-${{ runner.os }}-
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        mkdir -p ~/apt-cache
+        sudo apt-get update
+        sudo apt-get install -y -o Dir::Cache::Archives="$HOME/apt-cache" \
+          fuse-overlayfs \
+          just \
+          podman \
+          podman-docker \
+          python3-pip \
+          qemu-user-static \
+          uidmap \
+          yq \
+          zstd
+        sudo chown -R "$USER" ~/apt-cache
+
+    - name: Enable lingering for current user
+      shell: bash
+      run: |
+        sudo loginctl enable-linger $USER || true
+
+    - name: Create Podman config directories
+      shell: bash
+      run: |
+        mkdir -p ~/.config/containers
+        mkdir -p ~/.local/share/containers
+
+    - name: Configure rootless Podman storage
+      shell: bash
+      run: |
+        {
+          echo '[storage]'
+          echo 'driver = "overlay"'
+          echo "runroot = \"/tmp/run-$(id -u)\""
+          echo "graphroot = \"$HOME/.local/share/containers/storage\""
+          echo '[storage.options]'
+          echo 'mount_program = "/usr/bin/fuse-overlayfs"'
+        } > ~/.config/containers/storage.conf
+
+    - name: Migrate Podman storage (if needed)
+      shell: bash
+      run: |
+        podman system migrate || true
+
+    - name: Cache pip packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: pip-podman-${{ runner.os }}-podman-compose
+
+    - name: Install podman-compose from PyPI
+      shell: bash
+      run: |
+        pip install --upgrade pip
+        pip install podman-compose
+
+    - name: Enable podman socket
+      shell: bash
+      run: |
+        systemctl --user enable --now podman.socket
+        echo "DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock" >> $GITHUB_ENV
+
+    - name: Verify Podman and podman-compose
+      shell: bash
+      run: |
+        podman --version
+        podman-compose version
+        systemctl --user status podman.socket

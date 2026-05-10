@@ -7,14 +7,6 @@ default: list
 list:
     @just --list
 
-# [private]
-# _keys-volume-args:
-#     #!/usr/bin/env bash
-#     printf '%s\n' \
-#         "-v ../../aptly-repo/ansible/generated-secrets/localhost/public/repo_signing.key:/opt/keys/gpg/repo_signing.key:ro" \
-#         "-v ../../aptly-repo/ansible/generated-secrets/localhost/private/repo_signing_private.key:/opt/keys/gpg/repo_signing_private.key:ro" \
-#         "-v ../../aptly-repo/ansible/generated-secrets/localhost/private/repo_signing_private_pass:/opt/keys/gpg/repo_signing_private_pass:ro"
-
 [private]
 _keys-volume-args:
     #!/usr/bin/env bash
@@ -38,7 +30,18 @@ _require-tools:
     }
 
 [private]
-_build-service service:
+_ensure-pip-conf:
+    #!/usr/bin/env bash
+    set -eu
+    if [ ! -f "${HOME}/.pip/pip.conf" ]; then
+        mkdir -p "${HOME}/.pip"
+        printf '[global]\nbreak-system-packages = true\nindex-url = https://pypi.org/simple\n' \
+            > "${HOME}/.pip/pip.conf"
+        echo "Created minimal ~/.pip/pip.conf (no private registry configured)"
+    fi
+
+[private]
+_build-service service: _ensure-pip-conf
     #!/usr/bin/env bash
     set -eu
     extra=""
@@ -67,11 +70,15 @@ _remove-service-image service:
     fi
 
 [private]
-_tooling target:
+_tooling target: _ensure-pip-conf
     #!/usr/bin/env bash
     set -eu
     rm -rf {{ tooling_dir }}/dist
-    {{ compose }} --file "{{ compose_file }}" run --rm $(just _keys-volume-args) builder "{{ target }}"
+    extra=""
+    if [ -n "${RELEASE_VERSION:-}" ]; then
+        extra="-e RELEASE_VERSION=${RELEASE_VERSION}"
+    fi
+    {{ compose }} --file "{{ compose_file }}" run --rm $(just _keys-volume-args) $extra builder "{{ target }}"
 
 # --- build containers ---
 

@@ -1,0 +1,237 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+
+    outputs:
+      release_version: ${{ steps.context.outputs.release_version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get release version
+        id: context
+        uses: ./.github/actions/get-version
+
+  builder-image:
+    needs: version
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Podman
+        uses: ./.github/actions/setup-podman
+
+      - name: Create pip.conf
+        uses: ./.github/actions/create-pip-conf
+
+      - name: Build base image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: packtly-builder-base
+          tags: latest
+          containerfiles: packtly-builder/containers/Containerfile
+          context: packtly-builder
+          build-args: |
+            BASE=debian:trixie-slim
+            CONTEXT_ROOT=containers
+            VERSION=${{ needs.version.outputs.release_version }}
+          extra-args: |
+            --target base
+            --secret id=pip.conf,src=${{ runner.temp }}/pip.conf
+          oci: true
+
+      - name: Build builder image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: packtly-builder-builder
+          tags: latest
+          containerfiles: packtly-builder/containers/Containerfile
+          context: packtly-builder
+          build-args: |
+            BASE=packtly-builder-base:latest
+            CONTEXT_ROOT=containers
+            VERSION=${{ needs.version.outputs.release_version }}
+          extra-args: |
+            --target build
+            --secret id=pip.conf,src=${{ runner.temp }}/pip.conf
+          oci: true
+
+      - name: Export builder image
+        run: |
+          podman save \
+            --format oci-archive \
+            packtly-builder-builder:latest \
+            | zstd -T0 -10 -o builder.tar.zst
+
+      - name: Upload builder image
+        uses: actions/upload-artifact@v4
+        with:
+          name: builder-image
+          path: builder.tar.zst
+          retention-days: 1
+
+  tooling:
+    needs:
+      - version
+      - builder-image
+
+    runs-on: ubuntu-24.04
+
+    permissions:
+      checks: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Podman
+        uses: ./.github/actions/setup-podman
+
+      - name: Download builder image
+        uses: actions/download-artifact@v4
+        with:
+          name: builder-image
+
+      - name: Load builder image
+        run: |
+          zstd -d builder.tar.zst -o builder.tar
+          podman load < builder.tar
+
+      - name: Prepare GPG key directory
+        run: mkdir -p Keys/gpg
+
+      - name: Run tooling tests
+        uses: ./.github/actions/run-in-builder
+        with:
+          command: sh -c 'just test-keys && just test'
+
+      - name: Build tooling wheel
+        uses: ./.github/actions/run-in-builder
+        with:
+          command: just build
+          release-version: ${{ needs.version.outputs.release_version }}
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Pytest Results
+          path: packtly-builder/tooling/python-test-results.xml
+          reporter: java-junit
+
+      - name: Coverage summary
+        uses: orgoro/coverage@v3.2
+        if: always() && github.event_name == 'pull_request'
+        with:
+          coverageFile: packtly-builder/tooling/coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload coverage html
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-html
+          path: packtly-builder/tooling/htmlcov
+          retention-days: 7
+
+      - name: Upload tooling wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: tooling-wheel
+          path: packtly-builder/tooling/dist/
+          retention-days: 7
+
+  runtime-image:
+    needs:
+      - version
+      - tooling
+
+    runs-on: ubuntu-24.04
+
+    permissions:
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Podman
+        uses: ./.github/actions/setup-podman
+
+      - name: Login to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            podman login ghcr.io \
+              -u "${{ github.actor }}" \
+              --password-stdin
+
+      - name: Download tooling wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: tooling-wheel
+          path: packtly-builder/tooling/dist
+
+      - name: Create pip.conf
+        uses: ./.github/actions/create-pip-conf
+
+      - name: Build runtime image
+        id: runtime
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ghcr.io/${{ github.repository }}
+          tags: |
+            latest
+            ${{ needs.version.outputs.release_version }}
+          containerfiles: packtly-builder/containers/Containerfile
+          context: packtly-builder
+          build-args: |
+            BASE=debian:trixie-slim
+            CONTEXT_ROOT=containers
+            VERSION=${{ needs.version.outputs.release_version }}
+          extra-args: |
+            --target image
+            --secret id=pip.conf,src=${{ runner.temp }}/pip.conf
+          oci: true
+
+      - name: Export runtime image
+        run: |
+          podman save \
+            --format oci-archive \
+            ghcr.io/${{ github.repository }}:latest \
+            | zstd -T0 -10 -o runtime.tar.zst
+
+      - name: Upload runtime image
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-image
+          path: runtime.tar.zst
+          retention-days: 7
+
+      - name: Push image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.runtime.outputs.image }}
+          tags: |
+            latest
+            ${{ needs.version.outputs.release_version }}
+          registry: ghcr.io
+

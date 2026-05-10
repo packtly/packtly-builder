@@ -12,22 +12,20 @@ prepare:
         exit 1
     fi
 
-    if ! command -v parse_pip_conf.py >/dev/null 2>&1; then
-        echo "parse_pip_conf.py not found in PATH" >&2
-        exit 1
-    fi
-
     # Load pip credentials
-    eval "$(parse_pip_conf.py -i0 /etc/pip.conf)"
-
-    if [ -z "${PIP_USERNAME:-}" ] || [ -z "${PIP_PASSWORD:-}" ]; then
-        echo "Please set up your pip config (/etc/pip.conf)" >&2
-        exit 1
+    creds=""
+    if [ -f /etc/pip.conf ] && command -v parse_pip_conf.py >/dev/null 2>&1; then
+        creds="$(parse_pip_conf.py -i0 /etc/pip.conf 2>/dev/null || true)"
     fi
+    eval "${creds:-}"
 
-    # Configure poetry (avoid re-writing if already set)
-    poetry config http-basic.aptlyapipypi "$PIP_USERNAME" "$PIP_PASSWORD"
-    poetry config http-basic.gitlab "$PIP_USERNAME" "$PIP_PASSWORD"
+    if [ -n "${PIP_USERNAME:-}" ] && [ -n "${PIP_PASSWORD:-}" ]; then
+        # Configure poetry with private registry credentials
+        poetry config http-basic.aptlyapipypi "$PIP_USERNAME" "$PIP_PASSWORD"
+        poetry config http-basic.gitlab "$PIP_USERNAME" "$PIP_PASSWORD"
+    else
+        echo "No pip credentials found — skipping private registry configuration"
+    fi
 
     # Local project settings
     poetry config virtualenvs.options.system-site-packages true --local
@@ -66,8 +64,12 @@ flake8:
 black:
     just _run-dev black .
 
-build:
-    just _ensure-dev-env
+build: _ensure-dev-env
+    #!/usr/bin/env sh
+    set -eu
+    if [ -n "${RELEASE_VERSION:-}" ]; then
+        poetry version "$RELEASE_VERSION"
+    fi
     poetry build
 
 test-keys:

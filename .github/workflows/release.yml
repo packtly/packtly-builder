@@ -1,0 +1,53 @@
+name: release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get release version
+        id: context
+        uses: ./.github/actions/get-version
+
+      - name: Check tag does not exist
+        run: |
+          VERSION="${{ steps.context.outputs.release_version }}"
+          if git ls-remote --tags origin "refs/tags/${VERSION}" | grep -q "${VERSION}"; then
+            echo "Tag ${VERSION} already exists"
+            exit 1
+          fi
+
+      - name: Log in to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Promote runtime image to versioned tags
+        run: |
+          VERSION="${{ steps.context.outputs.release_version }}"
+          IMAGE="ghcr.io/${{ github.repository }}"
+
+          IFS='.' read -r major minor patch <<< "$VERSION"
+
+          podman pull "${IMAGE}:latest"
+          podman tag "${IMAGE}:latest" "${IMAGE}:${VERSION}"
+          podman push "${IMAGE}:${VERSION}"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.context.outputs.release_version }}
+          name: Release ${{ steps.context.outputs.release_version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -94,7 +94,7 @@ COPY ${CONTEXT_ROOT}/scripts/gen_gpg /usr/local/bin/gen_gpg
 COPY ${CONTEXT_ROOT}/scripts/gen_ssh /usr/local/bin/gen_ssh
 
 RUN --mount=type=bind,source=tooling,target=/tmp/tooling,rw \
-  --mount=type=secret,id=pip.conf,target=/etc/pip.conf \
+  --mount=type=secret,id=pip.conf,target=/etc/pip.conf,required=false \
   cd /tmp/tooling && \
   just prepare
 
@@ -107,7 +107,7 @@ FROM base AS image
 
 # Wheel is produced by the build stage - no host-side artifact required
 RUN --mount=type=bind,source=tooling,target=/tmp/tooling \
-  --mount=type=secret,id=pip.conf,target=/etc/pip.conf \
+  --mount=type=secret,id=pip.conf,target=/etc/pip.conf,required=false \
   pip install --no-cache-dir /tmp/tooling/dist/*.whl
 
 ENTRYPOINT [ "/usr/local/bin/packtly_builder_tooling" ]
