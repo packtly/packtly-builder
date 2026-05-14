@@ -1,0 +1,42 @@
+{
+    "name": "vsc-pbuilder",
+    "dockerComposeFile": "../packtly-builder/podman-compose.devcontainer.yml",
+    "service": "devcontainer",
+    "workspaceFolder": "/workspace",
+    "containerEnv": {
+        "APTLYHOST": "http://localhost:8080"
+    },
+    "mounts": [
+        "type=bind,source=${localWorkspaceFolder}/Keys,target=/opt/keys"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "alefragnani.bookmarks",
+                "donjayamanne.githistory",
+                "ms-vscode.cpptools",
+                "ms-python.python",
+                "ms-python.autopep8",
+                "ms-python.black-formatter",
+                "mhutchie.git-graph",
+                "foxundermoon.shell-format",
+                "EditorConfig.EditorConfig",
+                "timonwong.shellcheck",
+                "tamasfe.even-better-toml",
+                "ms-azuretools.vscode-docker",
+                "exiasr.hadolint",
+                "nefrob.vscode-just-syntax",
+                "tobiashochguertel.just-formatter",
+                "redhat.vscode-yaml"
+            ],
+            "settings": {
+                "terminal.integrated.profiles.linux": {
+                    "bash": {
+                        "path": "/bin/bash"
+                    }
+                },
+                "terminal.integrated.defaultProfile.linux": "bash"
+            }
+        }
+    }
+}

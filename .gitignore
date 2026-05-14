@@ -1,0 +1,42 @@
+# Archive and package files
+*.tgz
+*.tar.xz
+*.deb
+*.ddeb
+*.dsc
+*.changes
+*.buildinfo
+
+# Build artifacts and directories
+*.build
+*Build/**
+basetgz*
+dist/
+build/
+*.egg-info
+
+# Keys (SSH and GPG)
+Keys/ssh/*
+Keys/gpg/*
+
+# Python-related files
+__pycache__/
+.venv/
+.tox/
+.toxenv/
+*.egg-info
+poetry.lock
+
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+python-test-results.xml
+test-output.xml

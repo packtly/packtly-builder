@@ -1,0 +1,63 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "packtly_builder_tooling",
+            "stopOnEntry": true,
+            "type": "debugpy",
+            "request": "launch",
+            "module": "packtly_builder_tooling.cli",
+            "cwd": "${workspaceFolder}/packtly-builder/tooling",
+            "args": [
+                "--aptlyhost=http://localhost:8080",
+                "--dist=trixie-apollo",
+                "--component=main",
+                "--upload",
+                "${workspaceFolder}/Test/debhello",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "poetry",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/usr/local/bin/poetry",
+            "args": ["build"],
+            "cwd": "${workspaceFolder}/packtly-builder/tooling",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "stopOnEntry": true
+        },
+        {
+            "name": "changelog",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/Test/changelog.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "stopOnEntry": true
+        },
+        {
+            "name": "Python: Pytest",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["--no-cov", "${file}"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "stopOnEntry": true
+        },
+        {
+            "name": "Python: Debug Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "purpose": ["debug-test"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}

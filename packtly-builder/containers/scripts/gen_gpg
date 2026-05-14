@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+KEYS_DIR="/opt/keys/gpg"
+GNUPGHOME="${KEYS_DIR}/gnupg"
+PUBLIC_KEY="${KEYS_DIR}/repo_signing.key"
+PRIVATE_KEY="${KEYS_DIR}/repo_signing_private.key"
+PASSPHRASE_FILE="${KEYS_DIR}/repo_signing_private_pass"
+
+generate_gpg_key() {
+
+    local NAME="$1"
+    local EMAIL="$2"
+    local PASS="$3"
+
+	mkdir -p "$GNUPGHOME" "${KEYS_DIR}"
+
+    chmod 700 "$GNUPGHOME"
+	chmod 700 "${KEYS_DIR}"
+
+    if GNUPGHOME="$GNUPGHOME" gpg --list-secret-keys --with-colons | grep -q '^sec'; then
+        echo "GPG key already exists"
+        return
+    fi
+
+    echo "$PASS" >"$PASSPHRASE_FILE"
+    chmod 600 "$PASSPHRASE_FILE"
+
+    GNUPGHOME="$GNUPGHOME" gpg --batch --generate-key <<EOF
+Key-Type: RSA
+Key-Length: 4096
+Subkey-Type: RSA
+Subkey-Length: 4096
+Name-Real: $NAME
+Name-Email: $EMAIL
+Expire-Date: 0
+Passphrase: $PASS
+%commit
+EOF
+
+	find "$GNUPGHOME" -name '*.kbx~' -delete
+
+    KEYID=$(GNUPGHOME="$GNUPGHOME" gpg --list-secret-keys --with-colons | awk -F: '/^sec/ {print $5; exit}')
+
+    GNUPGHOME="$GNUPGHOME" gpg --armor --export "$KEYID" >"$PUBLIC_KEY"
+
+    GNUPGHOME="$GNUPGHOME" gpg \
+        --batch \
+        --pinentry-mode loopback \
+        --passphrase-file "$PASSPHRASE_FILE" \
+        --armor \
+        --export-secret-keys "$KEYID" >"$PRIVATE_KEY"
+
+
+}
+
+usage() {
+	cat <<EOF
+Usage: $(basename "$0") -n|--name <NAME> -e|--email <EMAIL> -p|--pass <PASSPHRASE>
+
+Options:
+  -n, --name      Real name for the GPG key
+  -e, --email     Email address for the GPG key
+  -p, --pass      Pass-phrase used to protect the private key
+  -h, --help      Show this help message
+EOF
+	exit 1
+}
+
+main() {
+	local name email pass
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		-n | --name)
+			shift
+			if [ $# -gt 0 ]; then
+				name="$1"
+				shift
+			else
+				echo "Error: Missing argument for --name"
+				usage
+			fi
+			;;
+		-e | --email)
+			shift
+			if [ $# -gt 0 ]; then
+				email="$1"
+				shift
+			else
+				echo "Error: Missing argument for --email"
+				usage
+			fi
+			;;
+		-p | --pass)
+			shift
+			if [ $# -gt 0 ]; then
+				pass="$1"
+				shift
+			else
+				echo "Error: Missing argument for --pass"
+				usage
+			fi
+			;;
+		-h | --help)
+			usage
+			;;
+		*)
+			echo "Warning: Unknown option '$1' - ignoring."
+			shift
+			;;
+		esac
+	done
+
+	if [[ -z "${name:-}" || -z "${email:-}" || -z "${pass:-}" ]]; then
+		echo "Error: --name, --email and --pass are all required."
+		usage
+	fi
+
+	generate_gpg_key "$name" "$email" "$pass"
+
+}
+
+main "$@"

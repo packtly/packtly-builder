@@ -1,0 +1,28 @@
+---
+version: "4"
+services:
+  devcontainer:
+    build:
+      context: .
+      dockerfile: containers/Containerfile
+      network: host
+      args:
+        - CONTEXT_ROOT=containers
+      target: build
+      secrets:
+        - pip.conf
+    image: packtly-builder-devcontainer:latest
+    volumes:
+      - ..:/workspace:Z
+      - ../Keys/gpg:/opt/keys/gpg:Z
+    network_mode: host
+    secrets:
+      - source: pip.conf
+        target: /etc/pip.conf
+    cap_add:
+      - NET_RAW
+    entrypoint: ["dumb-init", "--", "sleep", "infinity"]
+
+secrets:
+  pip.conf:
+    file: ${HOME}/.pip/pip.conf

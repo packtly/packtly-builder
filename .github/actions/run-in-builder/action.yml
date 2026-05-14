@@ -1,0 +1,29 @@
+---
+name: "Run in builder container"
+description: "Run a just target inside the packtly-builder-builder container"
+
+inputs:
+  command:
+    description: "Command to pass to the container entrypoint"
+    required: true
+  release-version:
+    description: "Optional RELEASE_VERSION to inject"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Run in builder
+      shell: bash
+      run: |
+        extra_args=""
+        if [ -n "${{ inputs.release-version }}" ]; then
+          extra_args="-e RELEASE_VERSION=${{ inputs.release-version }}"
+        fi
+        podman run --rm \
+          -v "$PWD:/workspace:Z" \
+          -w /workspace/packtly-builder/tooling \
+          $extra_args \
+          packtly-builder-builder:latest \
+          ${{ inputs.command }}

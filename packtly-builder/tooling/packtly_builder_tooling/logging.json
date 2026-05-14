@@ -1,0 +1,36 @@
+{
+  "version": 1,
+
+  "filters": {
+    "max_info": {
+      "()": "packtly_builder_tooling.logging_setup.MaxLevelFilter",
+      "max_level": "INFO"
+    }
+  },
+
+  "formatters": {
+    "minimal": {
+      "format": "%(levelname)s: %(message)s"
+    }
+  },
+
+  "handlers": {
+    "stdout": {
+      "class": "logging.StreamHandler",
+      "formatter": "minimal",
+      "filters": ["max_info"],
+      "stream": "ext://sys.stdout"
+    },
+    "stderr": {
+      "class": "logging.StreamHandler",
+      "level": "WARNING",
+      "formatter": "minimal",
+      "stream": "ext://sys.stderr"
+    }
+  },
+
+  "root": {
+    "level": "INFO",
+    "handlers": ["stdout", "stderr"]
+  }
+}

@@ -1,0 +1,35 @@
+#!/usr/bin/sh
+set -eu
+
+if ! command -v poetry >/dev/null; then
+    echo "Please install poetry first: scripts/setup_venv" >&2
+    exit 1
+fi
+
+# get path to the folder containing this script
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
+(
+    cd "${SCRIPT_DIR}"
+
+    # install test resources dependencies using poetry
+    rm -f poetry.lock || true
+
+    # get auth info from pip config
+    pip_index_url="$(pip config get global.extra-index-url 2>/dev/null || pip config --global get global.extra-index-url)"
+    pip_user="$(echo "${pip_index_url}" | sed -n 's/https:\/\/\([^:]*\):.*/\1/p' | sed 's/%40/@/g')"
+    pip_pass="$(echo "${pip_index_url}" | sed -n 's/https:\/\/[^:]*:\([^@]*\)@.*/\1/p')"
+
+    if [ -z "${pip_user}" ] || [ -z "${pip_pass}" ]; then
+        echo "Please set up your pip config to use artifactory (index-url must be set with user and token)!" >&2
+        exit 1
+    fi
+
+    echo "User ${pip_user}" "${pip_pass}"
+    poetry config http-basic.aptlyapipypi "${pip_user}" "${pip_pass}"
+    poetry config http-basic.gitlab "${pip_user}" "${pip_pass}"
+    poetry config virtualenvs.options.system-site-packages true --local
+    poetry install -v --no-interaction --with dev
+
+    echo "run succesfully"
+    exit 0
+)

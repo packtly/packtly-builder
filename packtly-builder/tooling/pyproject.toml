@@ -1,0 +1,75 @@
+[tool.poetry]
+name = "packtly_builder_tooling"
+version = "0.0.0"
+description = "debhelper tooling"
+authors = ["embtom <t.willetal@gmail.com>"]
+maintainers = ["embtom <t.willetal@gmail.com>"]
+
+classifiers = [
+    "Topic :: System :: Archiving :: Packaging",
+    "Operating System :: POSIX",
+]
+
+packages = [
+    { include = "packtly_builder_tooling" },
+]
+include = [
+    "packtly_builder_tooling/logging.json"
+]
+
+exclude = [
+    "packtly_builder_tooling/tests",
+    "packtly_builder_tooling/conftest.py",
+]
+
+[[tool.poetry.source]]
+name = "aptlyapipypi"
+url = "https://tomhp.fritz.box:8888/api/v4/projects/126/packages/pypi/simple"
+priority = "supplemental"
+
+[tool.poetry.dependencies]
+aptly-api-client = "==0.3.0"
+python = ">=3.10,<4.0"
+python-gnupg = "^0.5.2"
+distro = "^1.9.0"
+
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.14.0"
+pytest = "^9.0.3"
+pytest-cov = "^7.0.1"
+types-requests = "^2.32.0.20241016"
+certifi = ">=2026.2.25,<2027.0.0"
+flake8 = "^7.1.1"
+black = {version = "^26.3.1", source = "PyPI"}
+
+[tool.poetry.scripts]
+packtly_builder_tooling = "packtly_builder_tooling.cli:main"
+
+[tool.pytest.ini_options]
+addopts = """\
+    --dpkgbuild=../../Test/debhello \
+    --doctest-modules \
+    --junitxml=python-test-results.xml \
+    --cov-report=term \
+    --cov-report=xml \
+    --cov-report=html \
+    --cov=. \
+    """
+pythonpath = ["packtly_builder_tooling"]
+testpaths = ["packtly_builder_tooling"]
+
+[tool.mypy]
+packages = ["packtly_builder_tooling"]
+
+follow_imports = "skip"       # Skips checking imported modules
+disallow_untyped_calls = true # Disallow calls to functions without type annotations
+disallow_untyped_defs = true  # Disallow defining functions without type annotations
+ignore_missing_imports = true # Ignore unresolved imports
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

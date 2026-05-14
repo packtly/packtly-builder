@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "packtly_builder_tooling",
+            "type": "vscode-just",
+            "task": "just",
+            "args": [
+                "--justfile=${workspaceFolder}/packtly-builder/tooling/justfile",
+                "${input:justRecipe}"
+            ],
+            "problemMatcher": [],
+        }
+    ],
+    "inputs": [
+        {
+            "id": "justRecipe",
+            "type": "pickString",
+            "description": "Choose a just recipe to run",
+            "options": [
+                "default",
+                "prepare",
+                "pytest",
+                "mypy",
+                "flake8",
+                "build",
+                "test_keys"
+            ],
+            "default": "default"
+        }
+    ]
+}

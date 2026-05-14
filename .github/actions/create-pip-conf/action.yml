@@ -1,0 +1,14 @@
+name: Create pip.conf
+description: Creates a pip.conf in RUNNER_TEMP with pypi.org as the index
+
+runs:
+  using: composite
+  steps:
+    - name: Create pip.conf
+      shell: bash
+      run: |
+        {
+          echo '[global]'
+          echo 'break-system-packages = true'
+          echo 'index-url = https://pypi.org/simple'
+        } > "$RUNNER_TEMP/pip.conf"

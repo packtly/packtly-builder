@@ -1,0 +1,21 @@
+name: Get Version
+description: Extracts the latest semantic version from CHANGELOG.md
+
+outputs:
+  release_version:
+    description: Semantic version extracted from CHANGELOG.md
+    value: ${{ steps.context.outputs.release_version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install semver
+      shell: bash
+      run: pip install semver
+
+    - name: Get release version
+      id: context
+      shell: bash
+      run: |
+        version=$(python3 "${{ github.action_path }}/get_version.py")
+        echo "release_version=$version" >> "$GITHUB_OUTPUT"
