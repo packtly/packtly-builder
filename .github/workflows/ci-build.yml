@@ -197,9 +197,7 @@ jobs:
         uses: redhat-actions/buildah-build@v2
         with:
           image: ghcr.io/${{ github.repository }}
-          tags: |
-            latest
-            ${{ needs.version.outputs.release_version }}
+          tags: latest
           containerfiles: packtly-builder/containers/Containerfile
           context: packtly-builder
           build-args: |
@@ -230,8 +228,6 @@ jobs:
         uses: redhat-actions/push-to-registry@v2
         with:
           image: ${{ steps.runtime.outputs.image }}
-          tags: |
-            latest
-            ${{ needs.version.outputs.release_version }}
+          tags: latest
           registry: ghcr.io
 
