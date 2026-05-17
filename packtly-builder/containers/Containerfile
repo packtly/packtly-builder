@@ -1,8 +1,7 @@
 ######################
 # Base image (common base for all stages)
 
-#ARG BASE=debian:trixie-slim
-ARG BASE=tomhp.fritz.box:5555/devops/containerfiles/trixie_ca:2
+ARG BASE=debian:trixie-slim
 FROM ${BASE} AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
