@@ -68,6 +68,14 @@ def _main(arguments: argparse.Namespace) -> None:
     verbosity = logging.DEBUG if arguments.verbose else logging.INFO
     set_verbosity(verbosity)
 
+    if arguments.log_file:
+        file_handler = logging.FileHandler(arguments.log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
+        )
+        logging.getLogger().addHandler(file_handler)
+
     aptlyhost = arguments.aptlyhost or os.environ.get("APTLYHOST")
     dist = arguments.dist
     component = arguments.component
@@ -83,7 +91,6 @@ def _main(arguments: argparse.Namespace) -> None:
     keyid = gpg.signing_key()
 
     dbuild = Debuild(Path(builddir))
-    dependsList = dbuild.build_dependencies()
 
     aptmanager = AptManager()
     if aptlyhost and endpoint:
@@ -92,9 +99,7 @@ def _main(arguments: argparse.Namespace) -> None:
         aptmanager.add_repo(aptlyhost, dist, components, keyring=installed_keyring)
     if aptmanager.update():
         logger.info("Apt cache updated successfully.")
-        for pkg in dependsList:
-            logger.info("Installing dependency: %s", pkg)
-            aptmanager.install_package(pkg)
+    dbuild.install_build_dependencies()
 
     dbuild.build()
     logger.info("Changes file: %s", dbuild.deb_changes_file())
@@ -172,6 +177,12 @@ def _parse_args() -> argparse.Namespace:
         "--upload",
         action="store_true",
         help="Upload to aptly server",
+    )
+    parser.add_argument(
+        "--log-file",
+        help="Write log output to this file in addition to stdout/stderr",
+        type=Path,
+        default=None,
     )
     return parser.parse_args()
 

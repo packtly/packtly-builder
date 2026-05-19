@@ -18,7 +18,8 @@ ENV \
   LANGUAGE=en_US.UTF-8 \
   GNUPGHOME=/etc/gnupg \
   PIP_ROOT_USER_ACTION=ignore \
-  PIP_BREAK_SYSTEM_PACKAGES=1
+  PIP_BREAK_SYSTEM_PACKAGES=1 \
+  DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \

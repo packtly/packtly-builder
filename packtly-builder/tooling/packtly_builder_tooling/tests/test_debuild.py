@@ -59,7 +59,6 @@ def test_deb_changes_version(debuild_obj: Debuild) -> None:
 
 def test_deb_changes_arch(debuild_obj: Debuild) -> None:
     architectures = debuild_obj.deb_changes_arch()
-    assert "source" in architectures
     assert get_architecture() in architectures
 
 

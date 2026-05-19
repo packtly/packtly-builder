@@ -1,4 +1,5 @@
 import os
+import re
 import base64
 import apt
 import apt_pkg
@@ -149,7 +150,17 @@ class AptManager:
         """
         Install a package from the cache, optionally filtered by source host.
         """
-        parsed = apt_pkg.parse_depends(package_name)
+        # Strip Debian build-profile qualifiers e.g. <!nocheck>, <!stage1> and
+        # arch restrictions e.g. [amd64] — apt_pkg.parse_depends cannot handle
+        # them.  Build-profile names consist only of [a-zA-Z0-9_.-] optionally
+        # prefixed with '!'; this avoids matching version operators like '<<'.
+        _PROFILE_RE = re.compile(
+            r"\s*<(?:!?[a-zA-Z0-9][a-zA-Z0-9_.+-]*)(?:\s+!?[a-zA-Z0-9][a-zA-Z0-9_.+-]*)*>"
+        )
+        stripped = _PROFILE_RE.sub("", package_name)
+        stripped = re.sub(r"\s*\[[^\]]*\]", "", stripped).strip()
+
+        parsed = apt_pkg.parse_depends(stripped)
         if not parsed:
             self.logger.error("Invalid package name: %s", package_name)
             return False
@@ -158,8 +169,27 @@ class AptManager:
         self.cache.open()
 
         if package_name not in self.cache:
-            self.logger.error("Package '%s' not found in cache.", package_name)
-            return False
+            # The name may be a virtual package.  Walk rev_provides_list to
+            # find a real package that satisfies it.
+            try:
+                apt_pkg_entry = self.cache._cache[package_name]
+                providers = [
+                    v.parent_pkg.name for v in apt_pkg_entry.rev_provides_list
+                ]
+            except (KeyError, AttributeError):
+                providers = []
+
+            if not providers:
+                self.logger.error("Package '%s' not found in cache.", package_name)
+                return False
+
+            real_name = providers[0]
+            self.logger.info(
+                "Package '%s' is virtual; installing provider '%s' instead.",
+                package_name,
+                real_name,
+            )
+            package_name = real_name
 
         pkg = self.cache[package_name]
 
