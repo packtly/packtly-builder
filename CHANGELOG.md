@@ -16,6 +16,12 @@ RegEx for release version from file
 r"^\#\# \[\d{1,}[.]\d{1,}[.]\d{1,}\] \- \d{4}\-\d{2}-\d{2}$"
 -->
 
+## [1.1.0] - 2026-05-20
+### Added
+- Aptly authentication via `--credentials-file`
+- `--log-file` CLI argument for file logging
+- Build dependency handling for virtual packages and architecture restrictions
+
 ## [1.0.0] - 2025-01-26
 ### Added
 - First release
