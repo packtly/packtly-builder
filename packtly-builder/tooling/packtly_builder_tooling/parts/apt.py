@@ -173,9 +173,7 @@ class AptManager:
             # find a real package that satisfies it.
             try:
                 apt_pkg_entry = self.cache._cache[package_name]
-                providers = [
-                    v.parent_pkg.name for v in apt_pkg_entry.rev_provides_list
-                ]
+                providers = [v.parent_pkg.name for v in apt_pkg_entry.rev_provides_list]
             except (KeyError, AttributeError):
                 providers = []
 

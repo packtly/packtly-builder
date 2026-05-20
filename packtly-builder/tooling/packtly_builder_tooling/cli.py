@@ -16,7 +16,7 @@ from packtly_builder_tooling.parts.apt import AptManager
 
 logger = setup_logger(__name__)
 
-SIGNING_KEYRING = Path("/tmp/signing-keyring.gpg")
+SIGNING_KEYRING = Path.home() / ".cache" / "packtly-builder" / "signing-keyring.gpg"
 PASSPHRASE_FILE = Path("/opt/keys/gpg/repo_signing_private_pass")
 PUBLIC_KEY = Path("/opt/keys/gpg/repo_signing.key")
 PRIVATE_KEY = Path("/opt/keys/gpg/repo_signing_private.key")
@@ -30,6 +30,8 @@ def create_signing_keyring() -> Gpg:
         keyring = Path("/usr/share/keyrings/debian-archive-keyring.gpg")
     else:
         raise LookupError("Unknown Platform")
+
+    SIGNING_KEYRING.parent.mkdir(parents=True, exist_ok=True)
 
     if SIGNING_KEYRING.exists():
         SIGNING_KEYRING.unlink()
@@ -45,12 +47,12 @@ def append_basedir(files_list: List[str], base_dir: str) -> List[str]:
 
 
 def establish_aptly_connection(
-    aptlyhost: str, dist: str, component: str
+    aptlyhost: str, dist: str, component: str, username: str = "", password: str = ""
 ) -> Tuple[Optional[Aptly], Optional[PublishEndpoint]]:
     aptlyclient = None
     endpoint = None
     try:
-        aptlyclient = Aptly(aptlyhost)
+        aptlyclient = Aptly(aptlyhost, username, password)
         if not dist or not component:
             raise ValueError("Invalid dist or component name")
         endpoint = aptlyclient.get_publish_endpoint(dist, component)
@@ -59,6 +61,34 @@ def establish_aptly_connection(
     except Exception:
         logger.error("No aptly server found at %s", aptlyhost)
     return aptlyclient, endpoint
+
+
+def resolve_aptly_credentials(credentials_file: Path) -> Tuple[str, str]:
+    config: dict[str, str] = {}
+
+    with credentials_file.open("r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+
+            # Skip empty lines and comments
+            if not line or line.startswith("#"):
+                continue
+
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            config[key.strip()] = value.strip()
+
+    username = config.get("username")
+    password = config.get("password")
+
+    if username is None or password is None:
+        raise ValueError(
+            f"Missing username or password in credentials file: {credentials_file}"
+        )
+
+    return username, password
 
 
 def _main(arguments: argparse.Namespace) -> None:
@@ -79,12 +109,19 @@ def _main(arguments: argparse.Namespace) -> None:
     aptlyhost = arguments.aptlyhost or os.environ.get("APTLYHOST")
     dist = arguments.dist
     component = arguments.component
+    username, password = resolve_aptly_credentials(arguments.credentials_file)
 
     # Initialize aptly client
     aptlyclient = None
     endpoint = None
     if aptlyhost:
-        aptlyclient, endpoint = establish_aptly_connection(aptlyhost, dist, component)
+        aptlyclient, endpoint = establish_aptly_connection(
+            aptlyhost,
+            dist,
+            component,
+            username,
+            password,
+        )
 
     # Setup GPG and build
     gpg = create_signing_keyring()
@@ -172,6 +209,12 @@ def _parse_args() -> argparse.Namespace:
         help="Specify the component to publish",
         type=str,
         default=None,
+    )
+    parser.add_argument(
+        "--credentials-file",
+        help="Read aptly credentials from this file using username=... and password=... entries.",
+        type=Path,
+        default="/run/secrets/aptly-credentials",
     )
     parser.add_argument(
         "--upload",
