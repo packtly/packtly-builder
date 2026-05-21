@@ -11,6 +11,12 @@ APTLY_CREDENTIALS_FILE="$SCRIPT_DIR/aptly-credentials"
 
 mkdir -p "$SCRIPT_DIR/logs"
 
+# --tmpfs /run:exec,mode=0755         replace /run with private tmpfs, bypasses host MS_SHARED propagation (fixes test-mount-util)
+# --cap-add SYS_ADMIN                 allow mount/unmount syscalls (required for --tmpfs and build steps)
+# --cap-add SYS_PTRACE                allow process introspection (required by systemd test-namespace)
+# --security-opt seccomp=unconfined   allow all syscalls including newer ones like mount_setattr
+# --security-opt unmask=all           unmask /proc/acpi, /sys/firmware etc. that podman masks by default
+
 podman run --rm \
     -v "$SCRIPT_DIR":/workspace:Z \
     -v "$KEYS_DIR/public/repo_signing.key":/opt/keys/gpg/repo_signing.key:Z,ro \
@@ -19,9 +25,14 @@ podman run --rm \
     -v "$APTLY_CREDENTIALS_FILE":/run/secrets/aptly-credentials:Z,ro \
     -v "$SCRIPT_DIR/logs":/logs:Z \
     -e APTLYHOST=http://localhost:8080 \
+    --tmpfs /run:exec,mode=0755 \
+    --cap-add SYS_ADMIN \
+    --cap-add SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --security-opt unmask=all \
     --network=host \
     ghcr.io/packtly/packtly-builder:latest \
-    /workspace \
+    /workspace/systemd \
     --log-file /logs/build.log \
     --dist trixie-apollo \
     --component main \
