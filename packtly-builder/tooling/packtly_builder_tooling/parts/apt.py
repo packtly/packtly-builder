@@ -12,6 +12,12 @@ from packtly_builder_tooling.logging_setup import setup_logger
 KEYRINGS_DIR = Path("/usr/share/keyrings")
 SOURCES_DIR = Path("/etc/apt/sources.list.d")
 
+# Compiled once at module scope to avoid repeated compilation overhead.
+# Matches Debian build-profile qualifiers e.g. <!nocheck>, <!stage1>.
+_PROFILE_RE = re.compile(
+    r"\s*<(?:!?[a-zA-Z0-9][a-zA-Z0-9_.+-]*)(?:\s+!?[a-zA-Z0-9][a-zA-Z0-9_.+-]*)*>"
+)
+
 
 class AptManager:
     """
@@ -152,11 +158,7 @@ class AptManager:
         """
         # Strip Debian build-profile qualifiers e.g. <!nocheck>, <!stage1> and
         # arch restrictions e.g. [amd64] — apt_pkg.parse_depends cannot handle
-        # them.  Build-profile names consist only of [a-zA-Z0-9_.-] optionally
-        # prefixed with '!'; this avoids matching version operators like '<<'.
-        _PROFILE_RE = re.compile(
-            r"\s*<(?:!?[a-zA-Z0-9][a-zA-Z0-9_.+-]*)(?:\s+!?[a-zA-Z0-9][a-zA-Z0-9_.+-]*)*>"
-        )
+        # them.
         stripped = _PROFILE_RE.sub("", package_name)
         stripped = re.sub(r"\s*\[[^\]]*\]", "", stripped).strip()
 
