@@ -1,5 +1,5 @@
 {
-    "name": "vsc-pbuilder",
+    "name": "packtly-builder",
     "dockerComposeFile": "../packtly-builder/podman-compose.devcontainer.yml",
     "service": "devcontainer",
     "workspaceFolder": "/workspace",
