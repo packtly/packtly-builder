@@ -10,15 +10,25 @@ logger = logging.getLogger(__name__)
 
 
 class Aptly:
-    def __init__(self, host: Optional[str]) -> None:
+    def __init__(
+        self,
+        host: Optional[str],
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> None:
         if host is None:
             raise ValueError("No hostname is set")
+        self.host = host
         version = None
         try:
-            self.client = Client(host, http_auth=HTTPBasicAuth("admin", "kaffee"))
+            http_auth = (
+                HTTPBasicAuth(username, password) if username and password else None
+            )
+            self.client = Client(host, http_auth=http_auth)
 
             version = self.client.misc.version()
         except RequestException as e:
+            logger.exception("Failed to connect to aptly server at %s: %s", host, e)
             raise e
 
         if self.client is not None:
@@ -87,7 +97,7 @@ class Aptly:
         component: str = "",
     ) -> bool:
 
-        logger.info("Attempting to upload at aptly server at %s", self.client.host)
+        logger.info("Attempting to upload at aptly server at %s", self.host)
         logger.info("Attempting to upload files: %s", files)
 
         repo_name = None

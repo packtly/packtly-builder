@@ -1,6 +1,10 @@
 import pytest
 import logging
-from packtly_builder_tooling.logging_setup import MaxLevelFilter, setup_logger, set_verbosity
+from packtly_builder_tooling.logging_setup import (
+    MaxLevelFilter,
+    setup_logger,
+    set_verbosity,
+)
 
 
 @pytest.fixture()

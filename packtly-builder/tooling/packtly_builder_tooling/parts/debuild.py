@@ -23,28 +23,72 @@ class Debuild:
             raise FileNotFoundError("debuild executable not found")
 
     def build_dependencies(self) -> List[str]:
-        depends = self.deb_control_key("Build-Depends")
-        return [dep.strip() for dep in depends.split(",")]
+        all_deps: List[str] = []
+        for key in ("Build-Depends", "Build-Depends-Indep", "Build-Depends-Arch"):
+            try:
+                raw = self.deb_control_key(key)
+            except KeyError:
+                continue
+            if raw:
+                all_deps.extend(dep.strip() for dep in raw.split(",") if dep.strip())
+        return all_deps
+
+    def install_build_dependencies(self) -> None:
+        """
+        Install all build dependencies declared in debian/control using
+        mk-build-deps.  This correctly handles virtual packages, OR
+        alternatives, architecture restrictions, and build-profile
+        qualifiers — all of which the manual apt parsing approach cannot
+        reliably handle.
+        """
+        mk_build_deps = shutil.which("mk-build-deps")
+        if not mk_build_deps:
+            raise FileNotFoundError("mk-build-deps not found (install devscripts)")
+
+        cmd = [
+            mk_build_deps,
+            "--install",
+            "--remove",
+            "--tool=apt-get -y --no-install-recommends",
+            str(self.deb_control_file()),
+        ]
+        with subprocess.Popen(
+            cmd,
+            cwd=self._outdir,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        ) as proc:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                self.logger.info(line.rstrip())
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd)
+        self.logger.info("Build dependencies installed successfully.")
 
     def build(self) -> None:
-        debuild_cmd = [self._debuild, "-uc", "-us"]
-        try:
-            result = subprocess.run(
-                debuild_cmd,
-                cwd=self._builddir,
-                text=True,
-                check=True,
-                capture_output=True,
-            )
-            if result.stdout:
-                self.logger.info(result.stdout)
-            self.logger.info("Debian packages built successfully.")
-        except subprocess.CalledProcessError as e:
-            if e.stdout:
-                self.logger.error(e.stdout)
-            if e.stderr:
-                self.logger.error(e.stderr)
-            raise e
+        # -b  build binary packages only; skips dpkg-source so no .orig
+        # tarball is required for 3.0 (quilt) source packages.
+        debuild_cmd = [self._debuild, "-uc", "-us", "-b"]
+        with subprocess.Popen(
+            debuild_cmd,
+            cwd=self._builddir,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.PIPE,
+        ) as proc:
+            assert proc.stdin is not None
+            # Answer "y" to debuild's interactive orig-tarball prompt so
+            # the build does not stall or abort in non-tty environments.
+            proc.stdin.write("y\n")
+            proc.stdin.close()
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                self.logger.info(line.rstrip())
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, debuild_cmd)
+        self.logger.info("Debian packages built successfully.")
 
     def builddir(self) -> Path:
         return self._builddir
