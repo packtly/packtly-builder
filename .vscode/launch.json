@@ -13,7 +13,7 @@
                 "--dist=trixie-apollo",
                 "--component=main",
                 "--upload",
-                "${workspaceFolder}/Test/debhello",
+                "${workspaceFolder}/test/debhello",
             ],
             "console": "integratedTerminal",
             "justMyCode": false
@@ -33,7 +33,7 @@
             "name": "changelog",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/Test/changelog.py",
+            "program": "${workspaceFolder}/test/changelog.py",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": false,

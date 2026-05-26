@@ -54,7 +54,7 @@ just                      # List all targets
 | `build-devcontainer` | Build the devcontainer image |
 | `build-tooling` | Build the `packtly_builder_tooling` Python wheel |
 
-### Test
+### test
 
 | Target | Description |
 |---|---|

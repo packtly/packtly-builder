@@ -47,7 +47,7 @@ packtly_builder_tooling = "packtly_builder_tooling.cli:main"
 
 [tool.pytest.ini_options]
 addopts = """\
-    --dpkgbuild=../../Test/debhello \
+    --dpkgbuild=../../test/debhello \
     --doctest-modules \
     --junitxml=python-test-results.xml \
     --cov-report=term \

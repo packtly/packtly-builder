@@ -15,7 +15,7 @@
     "python.testing.pytestArgs": [
         "-s",
         "--verbose",
-        "--dpkgbuild=Test/debhello",
+        "--dpkgbuild=test/debhello",
         "--no-cov",
         "packtly-builder/tooling/packtly_builder_tooling"
     ],
