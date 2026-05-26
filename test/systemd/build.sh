@@ -7,7 +7,7 @@ TOPDIR="$(git rev-parse --show-toplevel)"
 
 # Keys path — adjust to match your packtly-infra secrets location
 KEYS_DIR="$TOPDIR/../packtly-infra/ansible/generated-secrets/localhost"
-APTLY_CREDENTIALS_FILE="$SCRIPT_DIR/aptly-credentials"
+APTLY_CREDENTIALS_FILE="$SCRIPT_DIR/../aptly-credentials"
 
 mkdir -p "$SCRIPT_DIR/logs"
 
