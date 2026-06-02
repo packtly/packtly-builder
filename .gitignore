@@ -1,3 +1,4 @@
+**/aptly-credentials
 # Archive and package files
 *.tgz
 *.tar.xz
