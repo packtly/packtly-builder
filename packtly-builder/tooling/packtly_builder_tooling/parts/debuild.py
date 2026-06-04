@@ -7,10 +7,11 @@ from typing import List
 from packtly_builder_tooling.parts.hostarch import get_architecture
 from packtly_builder_tooling.logging_setup import setup_logger
 
+logger = setup_logger(__name__)
+
 
 class Debuild:
     def __init__(self, builddir: Path) -> None:
-        self.logger = setup_logger(__name__)
         debuild_executable = shutil.which("debuild")
         self.parsed_control_info = Deb822()
         self.parsed_deb_info = Deb822()
@@ -61,10 +62,10 @@ class Debuild:
         ) as proc:
             assert proc.stdout is not None
             for line in proc.stdout:
-                self.logger.info(line.rstrip())
+                logger.info(line.rstrip())
         if proc.returncode != 0:
             raise subprocess.CalledProcessError(proc.returncode, cmd)
-        self.logger.info("Build dependencies installed successfully.")
+        logger.info("Build dependencies installed successfully.")
 
     def build(self) -> None:
         # -b  build binary packages only; skips dpkg-source so no .orig
@@ -85,10 +86,10 @@ class Debuild:
             proc.stdin.close()
             assert proc.stdout is not None
             for line in proc.stdout:
-                self.logger.info(line.rstrip())
+                logger.info(line.rstrip())
         if proc.returncode != 0:
             raise subprocess.CalledProcessError(proc.returncode, debuild_cmd)
-        self.logger.info("Debian packages built successfully.")
+        logger.info("Debian packages built successfully.")
 
     def builddir(self) -> Path:
         return self._builddir

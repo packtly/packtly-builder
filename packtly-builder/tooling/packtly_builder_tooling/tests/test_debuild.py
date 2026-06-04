@@ -116,9 +116,6 @@ def _make_debuild(tmp_path: Path) -> Debuild:
     obj = Debuild.__new__(Debuild)
     obj._builddir = tmp_path
     obj._outdir = tmp_path.parent
-    from packtly_builder_tooling.logging_setup import setup_logger
-
-    obj.logger = setup_logger("test_debuild")
     from debian.deb822 import Deb822
 
     obj.parsed_control_info = Deb822()
