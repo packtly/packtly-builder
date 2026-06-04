@@ -5,12 +5,11 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOPDIR="$(git rev-parse --show-toplevel)"
 
-
 # Keys path — adjust to match your packtly-infra secrets location
 KEYS_DIR="$TOPDIR/../packtly-infra/ansible/generated-secrets/localhost"
 APTLY_CREDENTIALS_FILE="$SCRIPT_DIR/../aptly-credentials"
 
-mkdir -p "$SCRIPT_DIR/logs"
+CONTAINER_IMAGE="packtly-builder:latest"
 
 PODMAN_COMMON=(
     --rm
@@ -32,10 +31,43 @@ COMMON_ARGS=(
     --credentials-file /run/secrets/aptly-credentials
 )
 
-# Build
-podman run "${PODMAN_COMMON[@]}" packtly-builder:latest "${COMMON_ARGS[@]}"
+run_build() {
+    podman run \
+        "${PODMAN_COMMON[@]}" \
+        "$CONTAINER_IMAGE" \
+        "${COMMON_ARGS[@]}"
+}
 
-# Upload
-podman run "${PODMAN_COMMON[@]}" packtly-builder:latest "${COMMON_ARGS[@]}" \
-    --no-build \
-    --upload
+run_upload() {
+    podman run \
+        "${PODMAN_COMMON[@]}" \
+        "$CONTAINER_IMAGE" \
+        "${COMMON_ARGS[@]}" \
+        --no-build \
+        --upload
+}
+
+main() {
+
+    mkdir -p "$SCRIPT_DIR/logs"
+    ACTION="${1:-all}"
+
+    case "$ACTION" in
+    build)
+        run_build
+        ;;
+    upload)
+        run_upload
+        ;;
+    all)
+        run_build
+        run_upload
+        ;;
+    *)
+        echo "Usage: $0 {build|upload|all}" >&2
+        exit 2
+        ;;
+    esac
+}
+
+main "$@"
