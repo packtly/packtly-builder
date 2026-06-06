@@ -9,7 +9,7 @@
                 "--justfile=${workspaceFolder}/packtly-builder/tooling/justfile",
                 "${input:justRecipe}"
             ],
-            "problemMatcher": [],
+            "problemMatcher": []
         }
     ],
     "inputs": [

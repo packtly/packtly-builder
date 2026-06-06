@@ -22,11 +22,6 @@ exclude = [
     "packtly_builder_tooling/conftest.py",
 ]
 
-[[tool.poetry.source]]
-name = "aptlyapipypi"
-url = "https://tomhp.fritz.box:8888/api/v4/projects/126/packages/pypi/simple"
-priority = "supplemental"
-
 [tool.poetry.dependencies]
 aptly-api-client = "==0.3.0"
 python = ">=3.10,<4.0"
