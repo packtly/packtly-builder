@@ -133,24 +133,6 @@ class Aptly:
             )
             return False
 
-    def get_repo_package_keys(self, repo_name: str) -> Optional[set[str]]:
-        try:
-            packages = self.client.repos.search_packages(
-                repo_name,
-                detailed=True,
-            )
-            return {package.key for package in packages}
-        except (
-            RequestException,
-            AptlyAPIException,
-        ) as e:
-            logger.error(
-                "Failed package list for repo '%s': %s",
-                repo_name,
-                e,
-            )
-            return None
-
     def upload_deb_files(
         self,
         endpoint: PublishEndpoint,
@@ -183,10 +165,6 @@ class Aptly:
             filesapi = self.client.files
             reposapi = self.client.repos
             publishapi = self.client.publish
-
-            existing_package_keys = self.get_repo_package_keys(repo_name)
-            if existing_package_keys is None:
-                return False
 
             changed = False
 
@@ -228,10 +206,9 @@ class Aptly:
 
                 if force_upload:
                     changed = True
-                    existing_package_keys.update(added_keys)
                     continue
 
-                if added_keys.issubset(existing_package_keys):
+                if not added_keys:
                     logger.info(
                         "Skipping existing package %s",
                         filename,
@@ -239,14 +216,13 @@ class Aptly:
                     continue
 
                 changed = True
-                existing_package_keys.update(added_keys)
 
             if not changed:
                 logger.info("No repository changes detected")
                 return True
 
             publishapi.update(
-                prefix=".",
+                prefix=endpoint.prefix,
                 distribution=endpoint.distribution,
                 sign_batch=True,
                 force_overwrite=force_upload,

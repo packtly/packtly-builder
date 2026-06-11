@@ -4,7 +4,8 @@ import base64
 import apt
 import apt_pkg
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, NamedTuple
+from apt.debfile import DebPackage
 from aptsources.sourceslist import SourcesList, Deb822SourceEntry
 from aptsources.distro import get_distro
 from packtly_builder_tooling.logging_setup import setup_logger
@@ -17,6 +18,12 @@ SOURCES_DIR = Path("/etc/apt/sources.list.d")
 _PROFILE_RE = re.compile(
     r"\s*<(?:!?[a-zA-Z0-9][a-zA-Z0-9_.+-]*)(?:\s+!?[a-zA-Z0-9][a-zA-Z0-9_.+-]*)*>"
 )
+
+
+class DebFileInfo(NamedTuple):
+    name: str
+    version: str
+    arch: str
 
 
 class AptManager:
@@ -33,8 +40,8 @@ class AptManager:
       are silently ignored.
     * Cache refresh, run the equivalent of "apt-get update" via
       :meth:`update`.
-    * Package installation, mark and commit a package for installation
-      via :meth:`install_package`.  An optional *source_host* filter ensures
+        * Package installation, mark and commit a package for installation
+            via :meth:`install_package`.  An optional *source_host* filter ensures
       the package is only installed when a version originating from a specific
       host is available.
 
@@ -142,20 +149,29 @@ class AptManager:
         """
         self.logger.info("Run apt cache update ...")
         try:
-            ret = self.cache.update()
+            apt_pkg.init_system()
+            cache = apt.Cache()
+            cache.update()
+            cache.open()
+            self.cache = cache
         except Exception as e:
             self.logger.warning("Failed to update apt cache: %s", e)
             return False
 
-        self.logger.info("Apt cache update complete with %s", ret)
-        return ret
+        self.logger.info(
+            "Apt cache update complete with %d packages available.", len(self.cache)
+        )
+        return True
 
-    def install_package(
-        self, package_name: str, source_host: Optional[str] = None
+    def install_dependencies(
+        self,
+        package_name: str,
+        source_host: Optional[str] = None,
     ) -> bool:
         """
         Install a package from the cache, optionally filtered by source host.
         """
+
         # Strip Debian build-profile qualifiers e.g. <!nocheck>, <!stage1> and
         # arch restrictions e.g. [amd64] — apt_pkg.parse_depends cannot handle
         # them.
@@ -168,69 +184,187 @@ class AptManager:
             return False
 
         package_name, req_version, req_relation = parsed[0][0]
-        self.cache.open()
-
-        if package_name not in self.cache:
-            # The name may be a virtual package.  Walk rev_provides_list to
-            # find a real package that satisfies it.
-            try:
-                apt_pkg_entry = self.cache._cache[package_name]
-                providers = [v.parent_pkg.name for v in apt_pkg_entry.rev_provides_list]
-            except (KeyError, AttributeError):
-                providers = []
-
-            if not providers:
+        if req_version and req_relation:
+            self.cache.open()
+            resolved_name = self._resolve_package_name(package_name)
+            if resolved_name is None:
                 self.logger.error("Package '%s' not found in cache.", package_name)
                 return False
 
-            real_name = providers[0]
-            self.logger.info(
-                "Package '%s' is virtual; installing provider '%s' instead.",
-                package_name,
-                real_name,
-            )
-            package_name = real_name
-
-        pkg = self.cache[package_name]
-
-        if req_version and req_relation:
+            pkg = self.cache[resolved_name]
             candidate = pkg.candidate
             if not apt_pkg.check_dep(candidate.version, req_relation, req_version):
                 self.logger.error(
                     "Package '%s' candidate %s does not satisfy %s %s",
-                    package_name,
+                    resolved_name,
                     candidate.version,
                     req_relation,
                     req_version,
                 )
                 return False
 
-        if source_host:
-            found_version = False
-            for version in pkg.versions:
-                for uri in version.uris:
+        pinned_version = req_version if req_relation in ("=", "==") else None
+
+        return self.install_package(
+            package_name,
+            version=pinned_version,
+            source_host=source_host,
+        )
+
+    def install_package(
+        self,
+        package_name: str,
+        version: Optional[str] = None,
+        source_host: Optional[str] = None,
+    ) -> bool:
+        """
+        Install a package from the cache, optionally filtered by version and source host.
+        """
+
+        self.cache.open()
+
+        resolved_name = self._resolve_package_name(package_name)
+        if resolved_name is None:
+            self.logger.error("Package '%s' not found in cache.", package_name)
+            return False
+
+        pkg = self.cache[resolved_name]
+
+        for candidate in pkg.versions:
+            if version and candidate.version != version:
+                continue
+
+            if source_host:
+                found = False
+                for uri in candidate.uris:
                     if source_host in uri:
-                        found_version = True
+                        found = True
                         break
-                if found_version:
-                    break
-            if not found_version:
-                self.logger.error(
-                    "Package '%s' not found from source '%s'.",
-                    package_name,
-                    source_host,
+
+                if not found:
+                    continue
+
+            self.logger.info("Installing package '%s'...", resolved_name)
+            pkg.mark_install()
+            try:
+                self.cache.commit()
+                self.logger.info(
+                    "Package '%s' installed successfully.",
+                    resolved_name,
                 )
+                return True
+            except Exception as e:
+                self.logger.error("Error during installation: %s", e)
                 return False
 
-        self.logger.info("Installing package '%s'...", package_name)
-        pkg.mark_install()
-        try:
-            self.cache.commit()
-            self.logger.info("Package '%s' installed successfully.", package_name)
-            return True
-        except Exception as e:
-            self.logger.error("Error during installation: %s", e)
+        self.logger.error(
+            "Package '%s' not available%s%s.",
+            package_name,
+            f" with version '{version}'" if version else "",
+            f" from source '{source_host}'" if source_host else "",
+        )
+        return False
+
+    def package_exists(
+        self,
+        package_name: str,
+        version: Optional[str] = None,
+        source_host: Optional[str] = None,
+    ) -> bool:
+        """
+        Check whether a package (optionally with a specific version)
+        is available from the configured apt repositories.
+        """
+
+        self.cache.open()
+
+        resolved_name = self._resolve_package_name(package_name)
+        if resolved_name is None:
             return False
+
+        pkg = self.cache[resolved_name]
+
+        for candidate in pkg.versions:
+
+            if version and candidate.version != version:
+                continue
+
+            if source_host:
+                found = False
+                for uri in candidate.uris:
+                    if source_host in uri:
+                        found = True
+                        break
+
+                if not found:
+                    continue
+
+            return True
+
+        return False
+
+    def upstream_file_exists(
+        self,
+        file_path: Path,
+        source_host: Optional[str] = None,
+    ) -> bool:
+        """Check whether the package represented by a .deb file path already
+        exists on *source_host*.
+
+        Parses the filename with :func:`parse_deb_filename` and delegates to
+        :meth:`package_exists`.  Non-deb files (e.g. .buildinfo) that cannot
+        be parsed are silently ignored and return False.
+        """
+        parsed = self._parse_deb_file(file_path)
+        if parsed is None:
+            return False
+        name, version, _arch = parsed
+        return self.package_exists(
+            name,
+            version=version,
+            source_host=source_host,
+        )
+
+    def _parse_deb_file(self, filepath: Path) -> Optional[DebFileInfo]:
+        """
+        Parse a Debian binary file into a DebFileInfo named tuple.
+        """
+        path = Path(filepath)
+
+        if not path.is_file():
+            return None
+
+        try:
+            pkg = DebPackage(filename=str(path))
+
+            return DebFileInfo(
+                name=pkg.pkgname, version=pkg["Version"], arch=pkg["Architecture"]
+            )
+        except Exception:
+            return None
+
+    def _resolve_package_name(self, package_name: str) -> Optional[str]:
+        if package_name in self.cache:
+            return package_name
+
+        # The name may be a virtual package.  Walk rev_provides_list to
+        # find a real package that satisfies it.
+        try:
+            apt_pkg_entry = self.cache._cache[package_name]
+            providers = [v.parent_pkg.name for v in apt_pkg_entry.rev_provides_list]
+        except (KeyError, AttributeError):
+            providers = []
+
+        if not providers:
+            return None
+
+        real_name = providers[0]
+        self.logger.info(
+            "Package '%s' is virtual; using provider '%s' instead.",
+            package_name,
+            real_name,
+        )
+        return real_name
 
     def _dearmor(self, armored: bytes) -> bytes:
         lines = armored.decode("ascii").splitlines()

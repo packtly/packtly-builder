@@ -93,9 +93,6 @@ def resolve_aptly_credentials(credentials_file: Path) -> Tuple[str, str]:
 
 def build_package(
     builddir: str,
-    aptlyhost: Optional[str],
-    dist: str,
-    endpoint: Optional[PublishEndpoint],
     skip_build: bool = False,
 ) -> Debuild:
     dbuild = Debuild(Path(builddir))
@@ -104,19 +101,11 @@ def build_package(
         logger.info("Skipping build step (--no-build)")
         return dbuild
 
-    aptmanager = AptManager()
-    if aptlyhost and endpoint:
-        installed_keyring = aptmanager.add_key(PUBLIC_KEY.read_bytes(), "aptly-keyring")
-        components = [s["Component"] for s in endpoint.sources]
-        aptmanager.add_repo(aptlyhost, dist, components, keyring=installed_keyring)
-    if aptmanager.update():
-        logger.info("Apt cache updated successfully.")
     dbuild.install_build_dependencies()
-
     dbuild.build()
+
     logger.info("Changes file: %s", dbuild.deb_changes_file())
     logger.info("Architecture: %s", dbuild.deb_changes_arch())
-
     return dbuild
 
 
@@ -139,26 +128,29 @@ def _main(arguments: argparse.Namespace) -> None:
     dist = arguments.dist
     component = arguments.component
     username, password = resolve_aptly_credentials(arguments.credentials_file)
+    aptmanager = AptManager()
 
     # Initialize aptly client
     aptlyclient = None
     endpoint = None
     if aptlyhost:
         aptlyclient, endpoint = establish_aptly_connection(
-            aptlyhost,
-            dist,
-            component,
-            username,
-            password,
+            aptlyhost, dist, component, username, password
         )
 
     # Setup GPG and build
     gpg = create_signing_keyring()
     keyid = gpg.signing_key()
 
-    dbuild = build_package(
-        builddir, aptlyhost, dist, endpoint, skip_build=arguments.no_build
-    )
+    if aptlyhost and endpoint:
+        installed_keyring = aptmanager.add_key(PUBLIC_KEY.read_bytes(), "aptly-keyring")
+        components = [s["Component"] for s in endpoint.sources]
+        aptmanager.add_repo(aptlyhost, dist, components, keyring=installed_keyring)
+
+    if aptmanager.update():
+        logger.info("Apt cache updated successfully.")
+
+    dbuild = build_package(builddir, skip_build=arguments.no_build)
 
     # Sign if key found
     try:
@@ -190,15 +182,32 @@ def _main(arguments: argparse.Namespace) -> None:
     if to_upload:
         assert aptlyclient is not None
         assert keyid is not None
-        aptlyclient.upload_deb_files(
-            endpoint,
-            dbuild.deb_changes_name(),
-            files,
-            keyid.fingerprint,
-            gpg.passphrase(),
-            component,
-            force_upload=arguments.force_upload,
-        )
+
+        already_deployed = False
+        if not arguments.force_upload:
+            aptmanager.update()
+            deb_files = [f for f in files if f.endswith(".deb") and "-dbgsym_" not in f]
+            already_deployed = (
+                not arguments.force_upload
+                and bool(deb_files)
+                and all(
+                    aptmanager.upstream_file_exists(Path(file), source_host=aptlyhost)
+                    for file in deb_files
+                )
+            )
+
+        if already_deployed:
+            logger.info("All packages already deployed upstream, skipping upload")
+        else:
+            aptlyclient.upload_deb_files(
+                endpoint,
+                dbuild.deb_changes_name(),
+                files,
+                keyid.fingerprint,
+                gpg.passphrase(),
+                component,
+                force_upload=arguments.force_upload,
+            )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -253,7 +262,7 @@ def _parse_args() -> argparse.Namespace:
         help="Upload to aptly server",
     )
     parser.add_argument(
-        "--force_upload",
+        "--force-upload",
         action="store_true",
         help="Force upload to aptly server even if package already exists",
     )
