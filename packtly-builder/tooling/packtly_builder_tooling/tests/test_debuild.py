@@ -32,7 +32,7 @@ def test_deb_control_file(debuild_obj: Debuild) -> None:
 def test_build_debpackage(apt_manager: AptManager, debuild_obj: Debuild) -> None:
     depend_list = debuild_obj.build_dependencies()
     for depend in depend_list:
-        assert apt_manager.install_package(depend)
+        assert apt_manager.install_dependencies(depend)
     debuild_obj.build()
 
 

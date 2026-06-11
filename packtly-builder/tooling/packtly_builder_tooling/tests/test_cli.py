@@ -104,7 +104,7 @@ def test_parse_args_force_upload_enabled_when_flag_present(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["packtly_builder_tooling", "/tmp/build", "--force_upload"],
+        ["packtly_builder_tooling", "/tmp/build", "--force-upload"],
     )
 
     arguments = cli._parse_args()

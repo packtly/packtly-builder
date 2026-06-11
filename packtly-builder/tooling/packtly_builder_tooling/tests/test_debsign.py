@@ -51,7 +51,7 @@ def test_debsign(debuild_obj: Debuild, GpgObj: Gpg, apt_manager: AptManager) -> 
         changes_file = debuild_obj.deb_changes_file()
     except FileNotFoundError:
         for depend in debuild_obj.build_dependencies():
-            assert apt_manager.install_package(depend)
+            assert apt_manager.install_dependencies(depend)
         debuild_obj.build()
         changes_file = debuild_obj.deb_changes_file()
 
