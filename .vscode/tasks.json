@@ -18,12 +18,13 @@
             "type": "pickString",
             "description": "Choose a just recipe to run",
             "options": [
+                "black",
+                "build",
                 "default",
+                "flake8",
+                "mypy",
                 "prepare",
                 "pytest",
-                "mypy",
-                "flake8",
-                "build",
                 "test_keys"
             ],
             "default": "default"

@@ -9,7 +9,8 @@ TOPDIR="$(git rev-parse --show-toplevel)"
 KEYS_DIR="$TOPDIR/../packtly-infra/ansible/generated-secrets/localhost"
 APTLY_CREDENTIALS_FILE="$SCRIPT_DIR/../aptly-credentials"
 
-CONTAINER_IMAGE="packtly-builder:latest"
+CONTAINER_IMAGE="ghcr.io/packtly/packtly-builder:latest"
+#CONTAINER_IMAGE="packtly-builder:latest"
 
 PODMAN_COMMON=(
     --rm
@@ -47,6 +48,16 @@ run_upload() {
         --upload
 }
 
+run_force_upload() {
+    podman run \
+        "${PODMAN_COMMON[@]}" \
+        "$CONTAINER_IMAGE" \
+        "${COMMON_ARGS[@]}" \
+        --no-build \
+        --upload \
+        --force-upload
+}
+
 main() {
 
     mkdir -p "$SCRIPT_DIR/logs"
@@ -59,12 +70,19 @@ main() {
     upload)
         run_upload
         ;;
+    force-upload)
+        run_force_upload
+        ;;
+    all-force-upload)
+        run_build
+        run_force_upload
+        ;;
     all)
         run_build
         run_upload
         ;;
     *)
-        echo "Usage: $0 {build|upload|all}" >&2
+        echo "Usage: $0 {build|upload|force-upload|all-force-upload|all}" >&2
         exit 2
         ;;
     esac
