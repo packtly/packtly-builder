@@ -3,7 +3,12 @@ from collections.abc import Iterator
 from pathlib import Path
 import pytest
 from unittest.mock import MagicMock, patch
-from packtly_builder_tooling.parts.apt import AptManager, KEYRINGS_DIR, SOURCES_DIR
+from packtly_builder_tooling.parts.apt import (
+    AptManager,
+    DebFileInfo,
+    KEYRINGS_DIR,
+    SOURCES_DIR,
+)
 
 REPO_URI = "http://localhost:8080"
 REPO_DIST = "trixie-apollo"
@@ -163,7 +168,7 @@ def test_apt_cache_update_failure(apt_manager_mock: AptManager) -> None:
 
 
 # ---------------------------------------------------------------------------
-# install_package
+# install_dependencies
 # ---------------------------------------------------------------------------
 
 
@@ -194,15 +199,15 @@ def make_pkg(uris_per_version: list[list[str]]) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_install_package_not_in_cache(apt_manager_mock: AptManager) -> None:
+def test_install_dependencies_not_in_cache(apt_manager_mock: AptManager) -> None:
     apt_manager_mock.cache.__contains__.return_value = False
 
     assert apt_manager_mock.install_package("nonexistent") is False
     apt_manager_mock.cache.open.assert_called_once()
 
 
-def test_install_package_success(apt_manager_mock: AptManager) -> None:
-    pkg = MagicMock()
+def test_install_dependencies_success(apt_manager_mock: AptManager) -> None:
+    pkg = make_pkg([["http://deb.debian.org/pkg.deb"]])
     setup_package(apt_manager_mock, pkg)
 
     assert apt_manager_mock.install_package("htop") is True
@@ -211,8 +216,8 @@ def test_install_package_success(apt_manager_mock: AptManager) -> None:
     apt_manager_mock.cache.commit.assert_called_once()
 
 
-def test_install_package_commit_error(apt_manager_mock: AptManager) -> None:
-    pkg = MagicMock()
+def test_install_dependencies_commit_error(apt_manager_mock: AptManager) -> None:
+    pkg = make_pkg([["http://deb.debian.org/pkg.deb"]])
     setup_package(apt_manager_mock, pkg)
     apt_manager_mock.cache.commit.side_effect = Exception("fail")
 
@@ -242,7 +247,7 @@ def test_install_package_commit_error(apt_manager_mock: AptManager) -> None:
         ),
     ],
 )
-def test_install_package_source_host(
+def test_install_dependencies_source_host(
     apt_manager_mock: AptManager,
     versions: list[list[str]],
     source_host: str,
@@ -254,3 +259,111 @@ def test_install_package_source_host(
     result = apt_manager_mock.install_package("htop", source_host=source_host)
 
     assert result is expected
+
+
+def test_package_exists_true_without_source_host(
+    apt_manager_mock: AptManager,
+) -> None:
+    pkg = make_pkg([["http://my-apt.example.com/pkg.deb"]])
+    setup_package(apt_manager_mock, pkg)
+
+    assert apt_manager_mock.package_exists("htop") is True
+
+
+def test_upstream_package_exists_true_for_matching_host(
+    apt_manager_mock: AptManager,
+) -> None:
+    pkg = make_pkg([["http://my-apt.example.com/pkg.deb"]])
+    setup_package(apt_manager_mock, pkg)
+
+    assert (
+        apt_manager_mock.package_exists(
+            "htop",
+            source_host="my-apt.example.com",
+        )
+        is True
+    )
+
+
+def test_upstream_package_exists_false_for_non_matching_host(
+    apt_manager_mock: AptManager,
+) -> None:
+    pkg = make_pkg([["http://deb.debian.org/pkg.deb"]])
+    setup_package(apt_manager_mock, pkg)
+
+    assert (
+        apt_manager_mock.package_exists(
+            "htop",
+            source_host="my-apt.example.com",
+        )
+        is False
+    )
+
+
+def test_dearmor_ascii_armored_key(apt_manager_mock: AptManager) -> None:
+    armored = b"""-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+SGVsbG8=
+
+=abcd
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+
+    result = apt_manager_mock._dearmor(armored)
+
+    assert result == b"Hello"
+
+
+def test_dearmor_invalid_base64(apt_manager_mock: AptManager) -> None:
+    armored = b"""-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+INVALID!!!
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+
+    with pytest.raises(Exception):
+        apt_manager_mock._dearmor(armored)
+
+
+def test_parse_deb_file_missing_file(
+    apt_manager_mock: AptManager,
+    tmp_path: Path,
+) -> None:
+    result = apt_manager_mock._parse_deb_file(tmp_path / "missing.deb")
+
+    assert result is None
+
+
+def test_parse_deb_file_success(
+    apt_manager_mock: AptManager,
+    tmp_path: Path,
+) -> None:
+    deb = tmp_path / "test.deb"
+    deb.touch()
+
+    control = "Package: htop\n" "Version: 1.0\n" "Architecture: amd64\n"
+
+    with patch("packtly_builder_tooling.parts.apt.apt_inst.DebFile") as MockDebFile:
+        mock_deb = MockDebFile.return_value
+        mock_deb.control.extractdata.return_value = control.encode()
+
+        result = apt_manager_mock._parse_deb_file(deb)
+
+    assert result == DebFileInfo(
+        name="htop",
+        version="1.0",
+        arch="amd64",
+    )
+
+
+def test_parse_deb_file_invalid(
+    apt_manager_mock: AptManager,
+    tmp_path: Path,
+) -> None:
+    deb = tmp_path / "test.deb"
+    deb.touch()
+
+    with patch("packtly_builder_tooling.parts.apt.apt_inst.DebFile") as MockDebFile:
+        MockDebFile.side_effect = RuntimeError("broken")
+
+        assert apt_manager_mock._parse_deb_file(deb) is None

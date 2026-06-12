@@ -82,3 +82,31 @@ def test_parse_args_rejects_removed_password_file_flag(
 
     with pytest.raises(SystemExit):
         cli._parse_args()
+
+
+def test_parse_args_force_upload_default_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["packtly_builder_tooling", "/tmp/build"],
+    )
+
+    arguments = cli._parse_args()
+
+    assert arguments.force_upload is False
+
+
+def test_parse_args_force_upload_enabled_when_flag_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["packtly_builder_tooling", "/tmp/build", "--force-upload"],
+    )
+
+    arguments = cli._parse_args()
+
+    assert arguments.force_upload is True

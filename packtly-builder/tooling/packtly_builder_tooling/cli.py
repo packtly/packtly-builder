@@ -91,6 +91,24 @@ def resolve_aptly_credentials(credentials_file: Path) -> Tuple[str, str]:
     return username, password
 
 
+def build_package(
+    builddir: str,
+    skip_build: bool = False,
+) -> Debuild:
+    dbuild = Debuild(Path(builddir))
+
+    if skip_build:
+        logger.info("Skipping build step (--no-build)")
+        return dbuild
+
+    dbuild.install_build_dependencies()
+    dbuild.build()
+
+    logger.info("Changes file: %s", dbuild.deb_changes_file())
+    logger.info("Architecture: %s", dbuild.deb_changes_arch())
+    return dbuild
+
+
 def _main(arguments: argparse.Namespace) -> None:
     builddir = arguments.builddir
     if not builddir:
@@ -110,39 +128,40 @@ def _main(arguments: argparse.Namespace) -> None:
     dist = arguments.dist
     component = arguments.component
     username, password = resolve_aptly_credentials(arguments.credentials_file)
+    aptmanager = AptManager()
 
     # Initialize aptly client
     aptlyclient = None
     endpoint = None
     if aptlyhost:
         aptlyclient, endpoint = establish_aptly_connection(
-            aptlyhost,
-            dist,
-            component,
-            username,
-            password,
+            aptlyhost, dist, component, username, password
         )
 
     # Setup GPG and build
     gpg = create_signing_keyring()
     keyid = gpg.signing_key()
+    dist_source = None
 
-    dbuild = Debuild(Path(builddir))
-
-    aptmanager = AptManager()
     if aptlyhost and endpoint:
         installed_keyring = aptmanager.add_key(PUBLIC_KEY.read_bytes(), "aptly-keyring")
         components = [s["Component"] for s in endpoint.sources]
-        aptmanager.add_repo(aptlyhost, dist, components, keyring=installed_keyring)
+        dist_source = aptmanager.add_repo(
+            aptlyhost, dist, components, keyring=installed_keyring
+        )
+
     if aptmanager.update():
         logger.info("Apt cache updated successfully.")
-    dbuild.install_build_dependencies()
 
-    dbuild.build()
-    logger.info("Changes file: %s", dbuild.deb_changes_file())
-    logger.info("Architecture: %s", dbuild.deb_changes_arch())
+    dbuild = build_package(builddir, skip_build=arguments.no_build)
 
     # Sign if key found
+    try:
+        changes_file = dbuild.deb_changes_file()
+    except FileNotFoundError as exc:
+        logger.error("Cannot locate changes file: %s", exc)
+        raise SystemExit(1) from exc
+
     if keyid:
         logger.info("KeyId to sign is %s", keyid.fingerprint)
         debsign = Debsign(
@@ -150,7 +169,7 @@ def _main(arguments: argparse.Namespace) -> None:
             gpg.passphrase(),
             keyid.fingerprint,
         )
-        debsign.sign_deb_files(dbuild.deb_changes_file())
+        debsign.sign_deb_files(changes_file)
 
     # Upload if all conditions met
     files = append_basedir(dbuild.deb_changes_files(), str(dbuild.outdir()))
@@ -166,14 +185,32 @@ def _main(arguments: argparse.Namespace) -> None:
     if to_upload:
         assert aptlyclient is not None
         assert keyid is not None
-        aptlyclient.upload_deb_files(
-            endpoint,
-            dbuild.deb_changes_name(),
-            files,
-            keyid.fingerprint,
-            gpg.passphrase(),
-            component,
-        )
+
+        already_deployed = False
+        if not arguments.force_upload:
+            aptmanager.update(dist_source)
+            deb_files = [f for f in files if f.endswith(".deb")]
+            already_deployed = (
+                not arguments.force_upload
+                and bool(deb_files)
+                and all(
+                    aptmanager.upstream_file_exists(Path(file), source_host=aptlyhost)
+                    for file in deb_files
+                )
+            )
+
+        if already_deployed:
+            logger.info("All packages already deployed upstream, skipping upload")
+        else:
+            aptlyclient.upload_deb_files(
+                endpoint,
+                dbuild.deb_changes_name(),
+                files,
+                keyid.fingerprint,
+                gpg.passphrase(),
+                component,
+                force_upload=arguments.force_upload,
+            )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -212,14 +249,25 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--credentials-file",
-        help="Read aptly credentials from this file using username=... and password=... entries.",
+        help="Path to a credentials file for aptly server",
         type=Path,
         default="/run/secrets/aptly-credentials",
+    )
+    parser.add_argument(
+        "--no-build",
+        help="Do not build the Debian package",
+        action="store_true",
+        default=False,
     )
     parser.add_argument(
         "--upload",
         action="store_true",
         help="Upload to aptly server",
+    )
+    parser.add_argument(
+        "--force-upload",
+        action="store_true",
+        help="Force upload to aptly server even if package already exists",
     )
     parser.add_argument(
         "--log-file",

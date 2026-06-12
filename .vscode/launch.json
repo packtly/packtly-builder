@@ -10,8 +10,10 @@
             "cwd": "${workspaceFolder}/packtly-builder/tooling",
             "args": [
                 "--aptlyhost=http://localhost:8080",
+                "--credentials-file=${workspaceFolder}/test/aptly-credentials",
                 "--dist=trixie-apollo",
                 "--component=main",
+                "--no-build",
                 "--upload",
                 "${workspaceFolder}/test/debhello",
             ],
