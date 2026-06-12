@@ -141,11 +141,14 @@ def _main(arguments: argparse.Namespace) -> None:
     # Setup GPG and build
     gpg = create_signing_keyring()
     keyid = gpg.signing_key()
+    dist_source = None
 
     if aptlyhost and endpoint:
         installed_keyring = aptmanager.add_key(PUBLIC_KEY.read_bytes(), "aptly-keyring")
         components = [s["Component"] for s in endpoint.sources]
-        aptmanager.add_repo(aptlyhost, dist, components, keyring=installed_keyring)
+        dist_source = aptmanager.add_repo(
+            aptlyhost, dist, components, keyring=installed_keyring
+        )
 
     if aptmanager.update():
         logger.info("Apt cache updated successfully.")
@@ -185,8 +188,8 @@ def _main(arguments: argparse.Namespace) -> None:
 
         already_deployed = False
         if not arguments.force_upload:
-            aptmanager.update()
-            deb_files = [f for f in files if f.endswith(".deb") and "-dbgsym_" not in f]
+            aptmanager.update(dist_source)
+            deb_files = [f for f in files if f.endswith(".deb")]
             already_deployed = (
                 not arguments.force_upload
                 and bool(deb_files)

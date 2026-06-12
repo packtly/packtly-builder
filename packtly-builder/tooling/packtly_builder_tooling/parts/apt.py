@@ -5,7 +5,7 @@ import apt
 import apt_pkg
 from pathlib import Path
 from typing import List, Optional, NamedTuple
-from apt.debfile import DebPackage
+import apt_inst
 from aptsources.sourceslist import SourcesList, Deb822SourceEntry
 from aptsources.distro import get_distro
 from packtly_builder_tooling.logging_setup import setup_logger
@@ -100,7 +100,7 @@ class AptManager:
         components: List[str] | str,
         repo_type: str = "deb",
         keyring: Optional[Path] = None,
-    ) -> None:
+    ) -> Path:
         """
         Add an apt repository if not already present.
         The entry is written to /etc/apt/sources.list.d/<dist>.sources (deb822).
@@ -115,6 +115,7 @@ class AptManager:
             "Checking if repository is already present: %s %s %s", uri, dist, components
         )
 
+        source_file = os.path.join(SOURCES_DIR, f"{dist}.sources")
         sources = SourcesList()
 
         for entry in sources.list:
@@ -124,10 +125,9 @@ class AptManager:
                 and set(entry.comps) == set(components)
             ):
                 self.logger.info("Repository already present.")
-                return
+                return Path(source_file)
 
         os.makedirs(SOURCES_DIR, exist_ok=True)
-        source_file = os.path.join(SOURCES_DIR, f"{dist}.sources")
 
         section = (
             f"Types: {repo_type}\n"
@@ -142,20 +142,20 @@ class AptManager:
         sources.list.append(entry)
         sources.save()
         self.logger.info("Repository added to %s", source_file)
+        return Path(source_file)
 
-    def update(self) -> bool:
+    def update(self, sources_list: Optional[Path] = None) -> bool:
         """
-        Run 'apt-get update' to update packages
+        Run 'apt-get update' to update packages.
         """
         self.logger.info("Run apt cache update ...")
         try:
-            apt_pkg.init_system()
             cache = apt.Cache()
-            cache.update()
+            cache.update(sources_list=str(sources_list) if sources_list else None)
             cache.open()
             self.cache = cache
-        except Exception as e:
-            self.logger.warning("Failed to update apt cache: %s", e)
+        except Exception:
+            self.logger.exception("Failed to update apt cache")
             return False
 
         self.logger.info(
@@ -275,33 +275,19 @@ class AptManager:
         Check whether a package (optionally with a specific version)
         is available from the configured apt repositories.
         """
-
-        self.cache.open()
-
         resolved_name = self._resolve_package_name(package_name)
         if resolved_name is None:
             return False
 
         pkg = self.cache[resolved_name]
 
-        for candidate in pkg.versions:
-
-            if version and candidate.version != version:
-                continue
-
-            if source_host:
-                found = False
-                for uri in candidate.uris:
-                    if source_host in uri:
-                        found = True
-                        break
-
-                if not found:
-                    continue
-
-            return True
-
-        return False
+        return any(
+            (version is None or candidate.version == version)
+            and (
+                source_host is None or any(source_host in uri for uri in candidate.uris)
+            )
+            for candidate in pkg.versions
+        )
 
     def upstream_file_exists(
         self,
@@ -328,17 +314,23 @@ class AptManager:
     def _parse_deb_file(self, filepath: Path) -> Optional[DebFileInfo]:
         """
         Parse a Debian binary file into a DebFileInfo named tuple.
+        Uses apt_inst.DebFile which reads only the control.tar member.
         """
         path = Path(filepath)
-
         if not path.is_file():
             return None
-
         try:
-            pkg = DebPackage(filename=str(path))
-
+            deb = apt_inst.DebFile(str(path))
+            control_data = deb.control.extractdata("control").decode("utf-8")
+            fields = {}
+            for line in control_data.splitlines():
+                if ":" in line and not line.startswith(" "):
+                    key, _, value = line.partition(":")
+                    fields[key.strip().lower()] = value.strip()
             return DebFileInfo(
-                name=pkg.pkgname, version=pkg["Version"], arch=pkg["Architecture"]
+                name=fields["package"],
+                version=fields["version"],
+                arch=fields["architecture"],
             )
         except Exception:
             return None

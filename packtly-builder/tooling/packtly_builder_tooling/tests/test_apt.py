@@ -341,13 +341,11 @@ def test_parse_deb_file_success(
     deb = tmp_path / "test.deb"
     deb.touch()
 
-    with patch("packtly_builder_tooling.parts.apt.DebPackage") as MockDebPackage:
-        pkg = MockDebPackage.return_value
-        pkg.pkgname = "htop"
-        pkg.__getitem__.side_effect = {
-            "Version": "1.0",
-            "Architecture": "amd64",
-        }.__getitem__
+    control = "Package: htop\n" "Version: 1.0\n" "Architecture: amd64\n"
+
+    with patch("packtly_builder_tooling.parts.apt.apt_inst.DebFile") as MockDebFile:
+        mock_deb = MockDebFile.return_value
+        mock_deb.control.extractdata.return_value = control.encode()
 
         result = apt_manager_mock._parse_deb_file(deb)
 
@@ -356,3 +354,16 @@ def test_parse_deb_file_success(
         version="1.0",
         arch="amd64",
     )
+
+
+def test_parse_deb_file_invalid(
+    apt_manager_mock: AptManager,
+    tmp_path: Path,
+) -> None:
+    deb = tmp_path / "test.deb"
+    deb.touch()
+
+    with patch("packtly_builder_tooling.parts.apt.apt_inst.DebFile") as MockDebFile:
+        MockDebFile.side_effect = RuntimeError("broken")
+
+        assert apt_manager_mock._parse_deb_file(deb) is None
