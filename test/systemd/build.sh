@@ -9,7 +9,7 @@ TOPDIR="$(git rev-parse --show-toplevel)"
 KEYS_DIR="$TOPDIR/../packtly-infra/ansible/generated-secrets/localhost"
 APTLY_CREDENTIALS_FILE="$SCRIPT_DIR/../aptly-credentials"
 
-CONTAINER_IMAGE="ghcr.io/packtly/packtly-builder:latest"
+CONTAINER_IMAGE="ghcr.io/packtly/packtly-builder:1.1.0"
 #CONTAINER_IMAGE="packtly-builder:latest"
 
 # --tmpfs /run:exec,mode=0755         replace /run with private tmpfs, bypasses host MS_SHARED propagation (fixes test-mount-util)

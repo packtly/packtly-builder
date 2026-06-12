@@ -14,7 +14,7 @@ CONTAINER_IMAGE="ghcr.io/packtly/packtly-builder:1.1.0"
 
 PODMAN_COMMON=(
     --rm
-    -v "$SCRIPT_DIR/..":/workspace:Z
+    -v "$SCRIPT_DIR":/workspace:Z
     -v "$KEYS_DIR/public/repo_signing.key":/opt/keys/gpg/repo_signing.key:Z,ro
     -v "$KEYS_DIR/private/repo_signing_private.key":/opt/keys/gpg/repo_signing_private.key:Z,ro
     -v "$KEYS_DIR/private/repo_signing_private_pass":/opt/keys/gpg/repo_signing_private_pass:Z,ro
@@ -25,7 +25,7 @@ PODMAN_COMMON=(
 )
 
 COMMON_ARGS=(
-    /workspace/debhello
+    /workspace/hplip.v2
     --log-file /logs/build.log
     --dist trixie-apollo
     --component main
