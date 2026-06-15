@@ -61,6 +61,9 @@ mypy:
 flake8:
     just _run-dev flake8
 
+cli *args:
+    just _run-dev packtly_builder_tooling {{args}}
+
 black:
     just _run-dev black .
 

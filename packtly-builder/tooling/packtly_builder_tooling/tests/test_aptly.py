@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from unittest.mock import call
 
 from packtly_builder_tooling.parts.aptly import Aptly
 
@@ -45,4 +46,44 @@ def test_upload_marks_changed_when_new_package_added() -> None:
     )
 
     assert result is True
+    publish_api.update.assert_called_once()
+
+
+def test_upload_batches_add_after_all_files_uploaded() -> None:
+    aptly, files_api, repos_api, publish_api = make_aptly_with_mocks()
+    endpoint = make_endpoint()
+
+    files_api.upload.return_value = True
+    repos_api.add_uploaded_file.return_value = SimpleNamespace(
+        failed_files=[],
+        report={"Added": ["Pdebhello_1.0.0_amd64", "Pdebhello_1.0.0_source"]},
+    )
+
+    files = [
+        "/tmp/debhello-dbgsym_1.0.0_amd64.deb",
+        "/tmp/debhello_1.0.0_amd64.deb",
+        "/tmp/debhello_1.0.0.dsc",
+        "/tmp/debhello_1.0.0.tar.xz",
+    ]
+
+    result = aptly.upload_deb_files(
+        endpoint=endpoint,
+        name="upload-dir",
+        files=files,
+        keyid="ABC123",
+        passphrase="secret",
+        component="main",
+    )
+
+    assert result is True
+    files_api.upload.assert_has_calls(
+        [call("upload-dir", f) for f in files],
+        any_order=False,
+    )
+    repos_api.add_uploaded_file.assert_called_once_with(
+        "repo-main",
+        "upload-dir",
+        remove_processed_files=True,
+        force_replace=False,
+    )
     publish_api.update.assert_called_once()

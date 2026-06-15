@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 
+from enum import Enum
 from pathlib import Path
 from debian.deb822 import Deb822
 from typing import List
@@ -8,6 +9,12 @@ from packtly_builder_tooling.parts.hostarch import get_architecture
 from packtly_builder_tooling.logging_setup import setup_logger
 
 logger = setup_logger(__name__)
+
+
+class BuildMode(Enum):
+    BINARY = "-b"  # binary packages only (no .orig tarball required)
+    SOURCE = "-S"  # source package only
+    FULL = "-F"  # source + binary
 
 
 class Debuild:
@@ -67,10 +74,11 @@ class Debuild:
             raise subprocess.CalledProcessError(proc.returncode, cmd)
         logger.info("Build dependencies installed successfully.")
 
-    def build(self) -> None:
-        # -b  build binary packages only; skips dpkg-source so no .orig
-        # tarball is required for 3.0 (quilt) source packages.
-        debuild_cmd = [self._debuild, "-uc", "-us", "-b"]
+    def build(self, mode: BuildMode = BuildMode.BINARY) -> None:
+        # -b  binary only  — no .orig tarball required (3.0 quilt or native)
+        # -S  source only  — requires .orig.tar.* in parent dir for quilt
+        # -F  full build   — source + binary
+        debuild_cmd = [self._debuild, "-uc", "-us", mode.value]
         with subprocess.Popen(
             debuild_cmd,
             cwd=self._builddir,
