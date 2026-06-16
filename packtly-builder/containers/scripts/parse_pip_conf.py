@@ -44,6 +44,12 @@ parsed = urlparse(url)
 pip_user = (parsed.username or "").replace("%40", "@")
 pip_pass = parsed.password or ""
 
+# Rebuild the URL without embedded credentials; auth is passed separately.
+host = parsed.hostname or ""
+if parsed.port:
+    host = f"{host}:{parsed.port}"
+clean_url = parsed._replace(netloc=host).geturl()
+
 print(f"PIP_USERNAME={pip_user}")
 print(f"PIP_PASSWORD={pip_pass}")
-print(f"PIP_URL={url}")
+print(f"PIP_URL={clean_url}")
