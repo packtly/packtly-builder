@@ -78,6 +78,9 @@ class Debuild:
         # -b  binary only  — no .orig tarball required (3.0 quilt or native)
         # -S  source only  — requires .orig.tar.* in parent dir for quilt
         # -F  full build   — source + binary
+        if mode in (BuildMode.SOURCE, BuildMode.FULL):
+            self._reset_source_tree()
+            self.ensure_orig_tarball()
         debuild_cmd = [self._debuild, "-uc", "-us", mode.value]
         with subprocess.Popen(
             debuild_cmd,
@@ -104,6 +107,164 @@ class Debuild:
 
     def outdir(self) -> Path:
         return self._outdir
+
+    def source_format(self) -> str:
+        format_file = self._builddir / "debian" / "source" / "format"
+        if format_file.is_file():
+            return format_file.read_text(encoding="utf-8").strip()
+        return ""
+
+    def is_quilt_format(self) -> bool:
+        """True for non-native quilt packages that need a separate .orig tarball."""
+        return self.source_format().startswith("3.0 (quilt)")
+
+    def _parse_changelog(self, field: str) -> str:
+        changelog = self._builddir / "debian" / "changelog"
+        output = subprocess.check_output(
+            ["dpkg-parsechangelog", "-l", str(changelog), "-S", field],
+            text=True,
+        )
+        return output.strip()
+
+    def source_name(self) -> str:
+        return self._parse_changelog("Source")
+
+    def upstream_version(self) -> str:
+        """Upstream version: drop epoch (before ':') and Debian revision (after last '-')."""
+        version = self._parse_changelog("Version")
+        if ":" in version:
+            version = version.split(":", 1)[1]
+        if "-" in version:
+            version = version.rsplit("-", 1)[0]
+        return version
+
+    def orig_tarball_exists(self) -> bool:
+        prefix = f"{self.source_name()}_{self.upstream_version()}.orig.tar."
+        return any(
+            p.name.startswith(prefix) and not p.name.endswith(".asc")
+            for p in self._outdir.iterdir()
+            if p.is_file()
+        )
+
+    def ensure_orig_tarball(self) -> None:
+        """Ensure the upstream .orig tarball exists for a 3.0 (quilt) source build.
+
+        Quilt packages keep upstream source and Debian packaging separate, so
+        ``dpkg-source -b`` requires ``../<source>_<upstream>.orig.tar.*``. A
+        git-buildpackage repository does not ship that tarball as a file; it is
+        stored on the ``pristine-tar`` branch and regenerated on demand.
+        """
+        if not self.is_quilt_format():
+            return
+        if self.orig_tarball_exists():
+            logger.info("Upstream orig tarball already present, skipping regeneration")
+            return
+
+        logger.info(
+            "No upstream orig tarball found for %s %s; regenerating via pristine-tar",
+            self.source_name(),
+            self.upstream_version(),
+        )
+        self._regenerate_orig_tarball()
+
+        if not self.orig_tarball_exists():
+            raise FileNotFoundError(
+                f"Failed to regenerate upstream orig tarball for "
+                f"{self.source_name()}_{self.upstream_version()} in {self._outdir}"
+            )
+        logger.info("Upstream orig tarball regenerated successfully")
+
+    def _reset_source_tree(self) -> None:
+        """Restore the git checkout to its committed state before a quilt source build.
+
+        ``dpkg-source -b`` for a 3.0 (quilt) package diffs the working tree
+        against the pristine upstream ``.orig`` tarball. Artifacts left behind by
+        a previous build that ``debian/rules clean`` does not remove — new
+        symlinks, regenerated binaries, generated files — produce
+        ``unrepresentable changes to source`` errors. Resetting the git checkout
+        guarantees the tree matches the committed packaging branch, which is the
+        state ``dpkg-source`` expects.
+        """
+        if not self.is_quilt_format():
+            return
+        git = shutil.which("git")
+        if not git:
+            return
+        is_worktree = subprocess.run(
+            [git, "-C", str(self._builddir), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if is_worktree.returncode != 0 or is_worktree.stdout.strip() != "true":
+            return
+        logger.info("Resetting source tree to committed state before source build")
+        # Restore tracked files the clean target deleted or modified.
+        self._run_streamed(
+            [git, "-C", str(self._builddir), "checkout", "--", "."],
+            cwd=self._builddir,
+        )
+        # Remove untracked and ignored build artifacts (symlinks, binaries, etc.).
+        self._run_streamed(
+            [git, "-C", str(self._builddir), "clean", "-fdx"],
+            cwd=self._builddir,
+        )
+
+    def _regenerate_orig_tarball(self) -> None:
+        gbp = shutil.which("gbp")
+        if not gbp:
+            raise FileNotFoundError(
+                "gbp not found (install git-buildpackage) — cannot regenerate "
+                "the upstream orig tarball for a 3.0 (quilt) source build"
+            )
+        self._ensure_local_branch("pristine-tar")
+        # gbp export-orig writes the tarball to the parent directory (outdir).
+        self._run_streamed([gbp, "export-orig", "--pristine-tar"], cwd=self._builddir)
+
+    def _ensure_local_branch(self, branch: str) -> None:
+        """Create a local branch tracking origin/<branch> if it only exists remotely.
+
+        After a plain ``git clone`` the pristine-tar data is a remote-tracking
+        branch; pristine-tar/gbp operate on the local ``refs/heads`` ref.
+        """
+        git = shutil.which("git")
+        if not git:
+            raise FileNotFoundError("git not found")
+        has_local = subprocess.run(
+            [git, "-C", str(self._builddir), "show-ref", "--verify", "--quiet",
+             f"refs/heads/{branch}"],
+            check=False,
+        )
+        if has_local.returncode == 0:
+            return
+        has_remote = subprocess.run(
+            [git, "-C", str(self._builddir), "show-ref", "--verify", "--quiet",
+             f"refs/remotes/origin/{branch}"],
+            check=False,
+        )
+        if has_remote.returncode != 0:
+            raise FileNotFoundError(
+                f"No '{branch}' branch found locally or on origin; cannot "
+                "regenerate the upstream orig tarball"
+            )
+        self._run_streamed(
+            [git, "-C", str(self._builddir), "branch", branch, f"origin/{branch}"],
+            cwd=self._builddir,
+        )
+
+    def _run_streamed(self, cmd: List[str], cwd: Path) -> None:
+        with subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        ) as proc:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                logger.info(line.rstrip())
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd)
 
     def deb_control_file(self) -> Path:
         control_file = self._builddir / "debian" / "control"

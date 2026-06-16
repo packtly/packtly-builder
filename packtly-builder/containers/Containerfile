@@ -37,6 +37,8 @@ RUN apt-get update && \
   gnupg2 \
   gpg-agent \
   git \
+  git-buildpackage \
+  pristine-tar \
   curl \
   wget \
   python3 \
@@ -85,9 +87,6 @@ RUN echo "eval \"\$(starship init bash)\"" >> /etc/bash.bashrc \
   && echo '[[ -f /usr/share/bash-completion/bash_completion ]]' \
     '&& source /usr/share/bash-completion/bash_completion' >> /etc/bash.bashrc \
   && poetry completions bash > /etc/bash_completion.d/poetry
-
-RUN curl -sSL https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64 \
-  -o /usr/local/bin/hadolint && chmod +x /usr/local/bin/hadolint
 
 COPY ${CONTEXT_ROOT}/scripts/parse_pip_conf.py /usr/local/bin/parse_pip_conf.py
 COPY ${CONTEXT_ROOT}/scripts/gen_gpg /usr/local/bin/gen_gpg
