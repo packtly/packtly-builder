@@ -47,11 +47,9 @@ class Aptly:
             RequestException,
             AptlyAPIException,
         ) as e:
-            logger.exception(
-                "Failed to connect to aptly server: %s",
-                e,
-            )
-            raise
+            raise ConnectionError(
+                f"Could not reach aptly server at {host}"
+            ) from e
 
     def get_publish_endpoint(
         self,
