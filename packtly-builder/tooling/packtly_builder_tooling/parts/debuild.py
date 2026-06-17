@@ -244,8 +244,7 @@ class Debuild:
             git,
             "-C",
             str(self._builddir),
-            "checkout",
-            "-b",
+            "branch",
             branch,
             f"origin/{branch}",
         ]
