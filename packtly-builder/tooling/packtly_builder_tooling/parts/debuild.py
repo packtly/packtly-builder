@@ -1,12 +1,11 @@
 import shutil
-import subprocess
-
 from enum import Enum
 from pathlib import Path
 from debian.deb822 import Deb822
 from typing import List
 from packtly_builder_tooling.parts.hostarch import get_architecture
 from packtly_builder_tooling.logging_setup import setup_logger
+from packtly_builder_tooling.parts.utils import run_subprocess
 
 logger = setup_logger(__name__)
 
@@ -60,18 +59,8 @@ class Debuild:
             "--tool=apt-get -y --no-install-recommends",
             str(self.deb_control_file()),
         ]
-        with subprocess.Popen(
-            cmd,
-            cwd=self._outdir,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        ) as proc:
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                logger.info(line.rstrip())
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode, cmd)
+        run_subprocess(cmd, self._outdir)
+
         logger.info("Build dependencies installed successfully.")
 
     def build(self, mode: BuildMode = BuildMode.BINARY) -> None:
@@ -82,24 +71,7 @@ class Debuild:
             self._reset_source_tree()
             self.ensure_orig_tarball()
         debuild_cmd = [self._debuild, "-uc", "-us", mode.value]
-        with subprocess.Popen(
-            debuild_cmd,
-            cwd=self._builddir,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.PIPE,
-        ) as proc:
-            assert proc.stdin is not None
-            # Answer "y" to debuild's interactive orig-tarball prompt so
-            # the build does not stall or abort in non-tty environments.
-            proc.stdin.write("y\n")
-            proc.stdin.close()
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                logger.info(line.rstrip())
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode, debuild_cmd)
+        run_subprocess(debuild_cmd, self._builddir, stdin_data="y\n")
         logger.info("Debian packages built successfully.")
 
     def builddir(self) -> Path:
@@ -120,11 +92,12 @@ class Debuild:
 
     def _parse_changelog(self, field: str) -> str:
         changelog = self._builddir / "debian" / "changelog"
-        output = subprocess.check_output(
+        output = run_subprocess(
             ["dpkg-parsechangelog", "-l", str(changelog), "-S", field],
-            text=True,
+            self._builddir,
+            mode="capture",
         )
-        return output.strip()
+        return output.stdout.strip()
 
     def source_name(self) -> str:
         return self._parse_changelog("Source")
@@ -190,25 +163,23 @@ class Debuild:
         git = shutil.which("git")
         if not git:
             return
-        is_worktree = subprocess.run(
+
+        result = run_subprocess(
             [git, "-C", str(self._builddir), "rev-parse", "--is-inside-work-tree"],
-            capture_output=True,
-            text=True,
+            cwd=self._builddir,
+            mode="capture",
             check=False,
         )
-        if is_worktree.returncode != 0 or is_worktree.stdout.strip() != "true":
+        if result.returncode != 0 or result.stdout.strip() != "true":
             return
         logger.info("Resetting source tree to committed state before source build")
         # Restore tracked files the clean target deleted or modified.
-        self._run_streamed(
-            [git, "-C", str(self._builddir), "checkout", "--", "."],
-            cwd=self._builddir,
-        )
+        cmd_checkout = [git, "-C", str(self._builddir), "checkout", "--", "."]
+        run_subprocess(cmd_checkout, self._builddir)
+
         # Remove untracked and ignored build artifacts (symlinks, binaries, etc.).
-        self._run_streamed(
-            [git, "-C", str(self._builddir), "clean", "-fdx"],
-            cwd=self._builddir,
-        )
+        cmd_clean = [git, "-C", str(self._builddir), "clean", "-fdx"]
+        run_subprocess(cmd_clean, self._builddir)
 
     def _regenerate_orig_tarball(self) -> None:
         gbp = shutil.which("gbp")
@@ -219,7 +190,9 @@ class Debuild:
             )
         self._ensure_local_branch("pristine-tar")
         # gbp export-orig writes the tarball to the parent directory (outdir).
-        self._run_streamed([gbp, "export-orig", "--pristine-tar"], cwd=self._builddir)
+
+        gbp_cmd = [gbp, "export-orig", "--pristine-tar"]
+        run_subprocess(gbp_cmd, self._builddir)
 
     def _ensure_local_branch(self, branch: str) -> None:
         """Create a local branch tracking origin/<branch> if it only exists remotely.
@@ -230,16 +203,35 @@ class Debuild:
         git = shutil.which("git")
         if not git:
             raise FileNotFoundError("git not found")
-        has_local = subprocess.run(
-            [git, "-C", str(self._builddir), "show-ref", "--verify", "--quiet",
-             f"refs/heads/{branch}"],
+        has_local = run_subprocess(
+            [
+                git,
+                "-C",
+                str(self._builddir),
+                "show-ref",
+                "--verify",
+                "--quiet",
+                f"refs/heads/{branch}",
+            ],
+            self._builddir,
+            mode="capture",
             check=False,
         )
         if has_local.returncode == 0:
             return
-        has_remote = subprocess.run(
-            [git, "-C", str(self._builddir), "show-ref", "--verify", "--quiet",
-             f"refs/remotes/origin/{branch}"],
+
+        has_remote = run_subprocess(
+            [
+                git,
+                "-C",
+                str(self._builddir),
+                "show-ref",
+                "--verify",
+                "--quiet",
+                f"refs/remotes/origin/{branch}",
+            ],
+            self._builddir,
+            mode="capture",
             check=False,
         )
         if has_remote.returncode != 0:
@@ -247,24 +239,18 @@ class Debuild:
                 f"No '{branch}' branch found locally or on origin; cannot "
                 "regenerate the upstream orig tarball"
             )
-        self._run_streamed(
-            [git, "-C", str(self._builddir), "branch", branch, f"origin/{branch}"],
-            cwd=self._builddir,
-        )
 
-    def _run_streamed(self, cmd: List[str], cwd: Path) -> None:
-        with subprocess.Popen(
-            cmd,
-            cwd=cwd,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        ) as proc:
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                logger.info(line.rstrip())
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode, cmd)
+        cmd = [
+            git,
+            "-C",
+            str(self._builddir),
+            "checkout",
+            "-b",
+            branch,
+            f"origin/{branch}",
+        ]
+
+        run_subprocess(cmd, self._builddir)
 
     def deb_control_file(self) -> Path:
         control_file = self._builddir / "debian" / "control"
