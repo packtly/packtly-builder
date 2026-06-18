@@ -55,7 +55,7 @@ def test_deb_changes_name(debuild_obj: Debuild) -> None:
 
 
 def test_deb_changes_version(debuild_obj: Debuild) -> None:
-    assert debuild_obj.deb_changes_version() == "1.0.0"
+    assert debuild_obj.deb_changes_version() == "1.0.0-1"
 
 
 def test_deb_changes_arch(debuild_obj: Debuild) -> None:
