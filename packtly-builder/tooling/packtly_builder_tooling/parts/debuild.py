@@ -67,10 +67,17 @@ class Debuild:
         # -b  binary only  — no .orig tarball required (3.0 quilt or native)
         # -S  source only  — requires .orig.tar.* in parent dir for quilt
         # -F  full build   — source + binary
+        debuild_cmd = [self._debuild, "-uc", "-us"]
         if mode in (BuildMode.SOURCE, BuildMode.FULL):
             self._reset_source_tree()
             self.ensure_orig_tarball()
-        debuild_cmd = [self._debuild, "-uc", "-us", mode.value]
+            # The build log is written into a ``logs/`` directory inside the
+            # source tree; tell dpkg-source to ignore it so the live log does
+            # not register as an unrepresentable upstream change.
+            debuild_cmd.append(
+                "--source-option=--extend-diff-ignore=(^|/)logs/"
+            )
+        debuild_cmd.append(mode.value)
         run_subprocess(debuild_cmd, self._builddir, stdin_data="y\n")
         logger.info("Debian packages built successfully.")
 
@@ -123,29 +130,46 @@ class Debuild:
         """Ensure the upstream .orig tarball exists for a 3.0 (quilt) source build.
 
         Quilt packages keep upstream source and Debian packaging separate, so
-        ``dpkg-source -b`` requires ``../<source>_<upstream>.orig.tar.*``. A
-        git-buildpackage repository does not ship that tarball as a file; it is
-        stored on the ``pristine-tar`` branch and regenerated on demand.
+        ``dpkg-source -b`` requires ``../<source>_<upstream>.orig.tar.*``. Two
+        conventional sources provide it:
+
+        * git-buildpackage repositories store the tarball on the
+          ``pristine-tar`` branch; it is deterministic, so an already-exported
+          tarball is reused.
+        * plain Debian source trees have no stored tarball, so it is rebuilt
+          from the current working tree every time to guarantee it matches the
+          source being packaged (a stale tarball from a previous run would make
+          ``dpkg-source`` report unrepresentable changes).
         """
         if not self.is_quilt_format():
             return
-        if self.orig_tarball_exists():
-            logger.info("Upstream orig tarball already present, skipping regeneration")
-            return
 
-        logger.info(
-            "No upstream orig tarball found for %s %s; regenerating via pristine-tar",
-            self.source_name(),
-            self.upstream_version(),
-        )
-        self._regenerate_orig_tarball()
+        if self._branch_exists("pristine-tar"):
+            if self.orig_tarball_exists():
+                logger.info(
+                    "Upstream orig tarball already present, skipping regeneration"
+                )
+                return
+            logger.info(
+                "No upstream orig tarball for %s %s; exporting via pristine-tar",
+                self.source_name(),
+                self.upstream_version(),
+            )
+            self._export_orig_via_pristine_tar()
+        else:
+            logger.info(
+                "Building upstream orig tarball for %s %s from the source tree",
+                self.source_name(),
+                self.upstream_version(),
+            )
+            self._create_orig_from_tree()
 
         if not self.orig_tarball_exists():
             raise FileNotFoundError(
                 f"Failed to regenerate upstream orig tarball for "
                 f"{self.source_name()}_{self.upstream_version()} in {self._outdir}"
             )
-        logger.info("Upstream orig tarball regenerated successfully")
+        logger.info("Upstream orig tarball ready")
 
     def _reset_source_tree(self) -> None:
         """Restore the git checkout to its committed state before a quilt source build.
@@ -181,18 +205,99 @@ class Debuild:
         cmd_clean = [git, "-C", str(self._builddir), "clean", "-fdx"]
         run_subprocess(cmd_clean, self._builddir)
 
-    def _regenerate_orig_tarball(self) -> None:
+    def _export_orig_via_pristine_tar(self) -> None:
         gbp = shutil.which("gbp")
         if not gbp:
             raise FileNotFoundError(
                 "gbp not found (install git-buildpackage) — cannot regenerate "
-                "the upstream orig tarball for a 3.0 (quilt) source build"
+                "the upstream orig tarball from the pristine-tar branch"
             )
         self._ensure_local_branch("pristine-tar")
         # gbp export-orig writes the tarball to the parent directory (outdir).
-
+        logger.info("Regenerating upstream orig tarball via pristine-tar")
         gbp_cmd = [gbp, "export-orig", "--pristine-tar"]
         run_subprocess(gbp_cmd, self._builddir)
+
+    def _create_orig_from_tree(self) -> None:
+        """Build the upstream orig tarball directly from the working tree.
+
+        For a 3.0 (quilt) package without a ``pristine-tar`` branch this mirrors
+        the standard ``dh_make`` behaviour: archive the source tree into
+        ``../<source>_<upstream>.orig.tar.xz`` excluding the ``debian/``
+        packaging directory, the VCS metadata and the build-log output
+        directory. The tree is cleaned first so build artifacts never leak into
+        the pristine tarball, and any stale tarball from an earlier run is
+        removed so it cannot mask a change in the source.
+        """
+        tar = shutil.which("tar")
+        if not tar:
+            raise FileNotFoundError("tar not found — cannot build the orig tarball")
+
+        self._remove_existing_orig()
+        self._clean_build_tree()
+
+        tarball = (
+            self._outdir
+            / f"{self.source_name()}_{self.upstream_version()}.orig.tar.xz"
+        )
+        logger.info("Building upstream orig tarball %s", tarball.name)
+        tar_cmd = [
+            tar,
+            "--create",
+            "--xz",
+            "--exclude=./debian",
+            "--exclude=./logs",
+            "--exclude=./.git",
+            f"--file={tarball}",
+            ".",
+        ]
+        run_subprocess(tar_cmd, self._builddir)
+
+    def _remove_existing_orig(self) -> None:
+        """Delete any existing upstream orig tarball for this version.
+
+        A tarball left behind by an earlier (possibly failed) run no longer
+        matches the current tree and would make ``dpkg-source`` compare against
+        stale upstream source.
+        """
+        prefix = f"{self.source_name()}_{self.upstream_version()}.orig.tar."
+        for entry in self._outdir.iterdir():
+            if entry.is_file() and entry.name.startswith(prefix):
+                logger.info("Removing stale orig tarball %s", entry.name)
+                entry.unlink()
+
+    def _clean_build_tree(self) -> None:
+        """Run the package ``clean`` target so build artifacts are not archived.
+
+        Without this a previously compiled binary (e.g. ``src/hello``) ends up
+        inside the pristine tarball and ``dpkg-source`` later reports its
+        removal once the clean target deletes it during the real build.
+        """
+        dpkg_buildpackage = shutil.which("dpkg-buildpackage")
+        if not dpkg_buildpackage:
+            return
+        run_subprocess([dpkg_buildpackage, "-T", "clean"], self._builddir)
+
+    def _branch_exists(self, branch: str) -> bool:
+        """Return True when *branch* exists locally or on ``origin``.
+
+        Used to decide between the pristine-tar and tree-archive workflows. A
+        missing git binary or a non-git source tree simply means the branch is
+        absent, so this never raises.
+        """
+        git = shutil.which("git")
+        if not git:
+            return False
+        for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}"):
+            found = run_subprocess(
+                [git, "-C", str(self._builddir), "show-ref", "--verify", "--quiet", ref],
+                self._builddir,
+                mode="silent",
+                check=False,
+            )
+            if found.returncode == 0:
+                return True
+        return False
 
     def _ensure_local_branch(self, branch: str) -> None:
         """Create a local branch tracking origin/<branch> if it only exists remotely.
