@@ -1,7 +1,9 @@
 from pathlib import Path
-from typing import List, Optional, Literal
-import subprocess
+from typing import Literal, Optional
 import logging
+import os
+import signal
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +11,7 @@ Mode = Literal["stream", "capture", "silent"]
 
 
 def run_subprocess(
-    cmd: List[str],
+    cmd: list[str],
     cwd: Path,
     stdin_data: Optional[str] = None,
     mode: Mode = "stream",
@@ -29,42 +31,56 @@ def run_subprocess(
         stdin=subprocess.PIPE if stdin_data is not None else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        start_new_session=True,
     ) as proc:
 
-        stdout_chunks: list[str] = []
+        output: list[str] = []
 
-        if proc.stdout is None:
-            raise RuntimeError("subprocess stdout pipe was not created")
+        try:
+            if stdin_data is not None and proc.stdin:
+                try:
+                    proc.stdin.write(stdin_data)
+                except BrokenPipeError:
+                    # Child exited before consuming stdin; continue collecting output.
+                    pass
+                finally:
+                    proc.stdin.close()
 
-        # feed stdin if needed
-        if stdin_data is not None and proc.stdin:
-            try:
-                proc.stdin.write(stdin_data)
-            except BrokenPipeError:
-                # Child exited before consuming stdin. We continue to collect
-                # available output and use the same non-zero handling below.
-                pass
-            finally:
-                proc.stdin.close()
+            assert proc.stdout is not None
 
-        # STREAM MODE
-        if mode == "stream":
             for line in proc.stdout:
-                logger.info(line.rstrip())
-                stdout_chunks.append(line)
+                output.append(line)
 
-        # CAPTURE / SILENT MODE
-        else:
-            for line in proc.stdout:
-                stdout_chunks.append(line)
-                if mode == "capture":
+                if mode == "stream":
+                    logger.info(line.rstrip())
+                elif mode == "capture":
                     logger.debug(line.rstrip())
+            returncode = proc.wait()
 
-        ret = proc.wait()
+        except KeyboardInterrupt:
+            _terminate(proc)
+            raise
 
-    stdout = "".join(stdout_chunks)
+    stdout = "".join(output)
 
-    if check and ret != 0:
-        raise subprocess.CalledProcessError(ret, cmd, output=stdout)
+    if check and returncode != 0:
+        raise subprocess.CalledProcessError(
+            returncode,
+            cmd,
+            output=stdout,
+        )
 
-    return subprocess.CompletedProcess(cmd, ret, stdout)
+    return subprocess.CompletedProcess(
+        cmd,
+        returncode,
+        stdout,
+    )
+
+
+def _terminate(proc: subprocess.Popen[str]) -> None:
+    if proc.poll() is None:
+        try:
+            os.killpg(proc.pid, signal.SIGINT)
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGTERM)
