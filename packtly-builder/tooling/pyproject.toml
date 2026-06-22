@@ -48,8 +48,9 @@ addopts = """\
     --cov-report=term \
     --cov-report=xml \
     --cov-report=html \
-    --cov=. \
+    --cov=packtly_builder_tooling \
     """
+
 pythonpath = ["packtly_builder_tooling"]
 testpaths = ["packtly_builder_tooling"]
 

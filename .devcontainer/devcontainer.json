@@ -14,6 +14,7 @@
             "extensions": [
                 "alefragnani.bookmarks",
                 "donjayamanne.githistory",
+                "mk12.better-git-line-blame",
                 "ms-vscode.cpptools",
                 "ms-python.python",
                 "ms-python.autopep8",
@@ -24,10 +25,11 @@
                 "timonwong.shellcheck",
                 "tamasfe.even-better-toml",
                 "ms-azuretools.vscode-docker",
-                "exiasr.hadolint",
                 "nefrob.vscode-just-syntax",
                 "tobiashochguertel.just-formatter",
-                "redhat.vscode-yaml"
+                "redhat.vscode-yaml",
+                "ryanluker.vscode-coverage-gutters",
+                "sonarsource.sonarlint-vscode"
             ],
             "settings": {
                 "terminal.integrated.profiles.linux": {

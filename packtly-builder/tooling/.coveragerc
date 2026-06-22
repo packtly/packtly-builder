@@ -1,0 +1,10 @@
+[run]
+source =
+    packtly_builder_tooling
+
+relative_files = True
+
+[paths]
+source =
+    packtly_builder_tooling
+    */packtly_builder_tooling

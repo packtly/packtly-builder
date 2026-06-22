@@ -1,10 +1,4 @@
 {
-    "hadolintPath": "/usr/local/bin/hadolint",
-    "cliOptions": [
-        "--config",
-        "${workspaceFolder}/.hadolint.yaml",
-        "${workspaceFolder}/Containerfile"
-    ],
     "maxNumberOfProblems": 100,
     "outputLevel": "debug",
     "editor.formatOnSave": false,
@@ -29,5 +23,11 @@
     "[just]": {
         "editor.defaultFormatter": "TobiasHochguertel.just-formatter"
     },
-    "python-envs.defaultEnvManager": "ms-python.python:system"
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "coverage-gutters.showGutterCoverage": true,
+    "coverage-gutters.showLineCoverage": true,
+    "coverage-gutters.coverageFileNames": [
+        "coverage.xml"
+    ],
 }
+
