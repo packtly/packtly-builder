@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "packtly_builder_tooling",
+            "name": "builder_tooling_upload",
             "stopOnEntry": true,
             "type": "debugpy",
             "request": "launch",
@@ -15,6 +15,24 @@
                 "--component=main",
                 "--no-build",
                 "--upload",
+                "${workspaceFolder}/test/debhello",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "builder_tooling_build_full",
+            "stopOnEntry": true,
+            "type": "debugpy",
+            "request": "launch",
+            "module": "packtly_builder_tooling.cli",
+            "cwd": "${workspaceFolder}/packtly-builder/tooling",
+            "args": [
+                "--aptlyhost=http://localhost:8080",
+                "--credentials-file=${workspaceFolder}/test/aptly-credentials",
+                "--dist=trixie-apollo",
+                "--component=main",
+                "--build-mode=full",
                 "${workspaceFolder}/test/debhello",
             ],
             "console": "integratedTerminal",

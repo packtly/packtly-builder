@@ -16,6 +16,16 @@ RegEx for release version from file
 r"^\#\# \[\d{1,}[.]\d{1,}[.]\d{1,}\] \- \d{4}\-\d{2}-\d{2}$"
 -->
 
+## [1.2.0] - 2026-06-23
+### Added
+- Source package build
+- Introduced automatic creation of .orig tarballs from the working tree when pristine-tar is not available
+- Added DebSourceBuilder to manage and automate upstream source archive generation.
+
+### Changed
+- Improved SIGINT / KeyboardInterrupt handling
+
+
 ## [1.1.0] - 2026-06-11
 ### Added
 - Aptly authentication via `--credentials-file`

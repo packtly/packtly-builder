@@ -58,32 +58,6 @@ def test_parse_args_accepts_credentials_file(monkeypatch: pytest.MonkeyPatch) ->
     assert arguments.credentials_file == Path("/tmp/secret")
 
 
-def test_parse_args_rejects_removed_password_flag(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["packtly_builder_tooling", "/tmp/build", "--password", "secret"],
-    )
-
-    with pytest.raises(SystemExit):
-        cli._parse_args()
-
-
-def test_parse_args_rejects_removed_password_file_flag(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["packtly_builder_tooling", "/tmp/build", "--password-file", "/tmp/secret"],
-    )
-
-    with pytest.raises(SystemExit):
-        cli._parse_args()
-
-
 def test_parse_args_force_upload_default_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

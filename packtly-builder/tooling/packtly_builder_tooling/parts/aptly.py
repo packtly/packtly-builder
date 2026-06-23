@@ -47,11 +47,9 @@ class Aptly:
             RequestException,
             AptlyAPIException,
         ) as e:
-            logger.exception(
-                "Failed to connect to aptly server: %s",
-                e,
-            )
-            raise
+            raise ConnectionError(
+                f"Could not reach aptly server at {host}"
+            ) from e
 
     def get_publish_endpoint(
         self,
@@ -188,33 +186,29 @@ class Aptly:
                     )
                     return False
 
-                uploaded_packages = reposapi.add_uploaded_file(
-                    repo_name,
-                    name,
-                    remove_processed_files=True,
-                    force_replace=force_upload,
+            uploaded_packages = reposapi.add_uploaded_file(
+                repo_name,
+                name,
+                remove_processed_files=True,
+                force_replace=force_upload,
+            )
+
+            if uploaded_packages.failed_files:
+                logger.error(
+                    "Failed adding package: %s",
+                    uploaded_packages.failed_files,
                 )
+                return False
 
-                if uploaded_packages.failed_files:
-                    logger.error(
-                        "Failed adding package: %s",
-                        uploaded_packages.failed_files,
-                    )
-                    return False
+            added_keys = set(uploaded_packages.report.get("Added", []))
 
-                added_keys = set(uploaded_packages.report.get("Added", []))
+            if force_upload:
+                changed = True
 
-                if force_upload:
-                    changed = True
-                    continue
+            elif not added_keys:
+                logger.info("No new packages were added")
 
-                if not added_keys:
-                    logger.info(
-                        "Skipping existing package %s",
-                        filename,
-                    )
-                    continue
-
+            else:
                 changed = True
 
             if not changed:

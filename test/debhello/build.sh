@@ -30,6 +30,7 @@ COMMON_ARGS=(
     --dist trixie-apollo
     --component main
     --credentials-file /run/secrets/aptly-credentials
+    --build-mode full
 )
 
 run_build() {

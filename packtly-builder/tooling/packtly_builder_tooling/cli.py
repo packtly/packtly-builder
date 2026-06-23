@@ -8,7 +8,7 @@ from typing import List, Tuple, Optional
 from pathlib import Path
 from aptly_api.parts.publish import PublishEndpoint
 from packtly_builder_tooling.logging_setup import setup_logger, set_verbosity
-from packtly_builder_tooling.parts.debuild import Debuild
+from packtly_builder_tooling.parts.debuild import Debuild, BuildMode
 from packtly_builder_tooling.parts.debsign import Debsign
 from packtly_builder_tooling.parts.gpg import Gpg
 from packtly_builder_tooling.parts.aptly import Aptly
@@ -94,6 +94,7 @@ def resolve_aptly_credentials(credentials_file: Path) -> Tuple[str, str]:
 def build_package(
     builddir: str,
     skip_build: bool = False,
+    build_mode: BuildMode = BuildMode.BINARY,
 ) -> Debuild:
     dbuild = Debuild(Path(builddir))
 
@@ -102,7 +103,7 @@ def build_package(
         return dbuild
 
     dbuild.install_build_dependencies()
-    dbuild.build()
+    dbuild.build(mode=build_mode)
 
     logger.info("Changes file: %s", dbuild.deb_changes_file())
     logger.info("Architecture: %s", dbuild.deb_changes_arch())
@@ -153,7 +154,9 @@ def _main(arguments: argparse.Namespace) -> None:
     if aptmanager.update():
         logger.info("Apt cache updated successfully.")
 
-    dbuild = build_package(builddir, skip_build=arguments.no_build)
+    dbuild = build_package(
+        builddir, skip_build=arguments.no_build, build_mode=arguments.build_mode
+    )
 
     # Sign if key found
     try:
@@ -258,6 +261,14 @@ def _parse_args() -> argparse.Namespace:
         help="Do not build the Debian package",
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "--build-mode",
+        help="Build mode: binary (default), source, or full",
+        type=lambda s: BuildMode[s.upper()],
+        default=BuildMode.BINARY,
+        choices=list(BuildMode),
+        metavar="{binary,source,full}",
     )
     parser.add_argument(
         "--upload",

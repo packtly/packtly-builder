@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Get release version
         id: context
@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -42,7 +42,7 @@ jobs:
         uses: ./.github/actions/create-pip-conf
 
       - name: Build base image
-        uses: redhat-actions/buildah-build@v2
+        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c
         with:
           image: packtly-builder-base
           tags: latest
@@ -58,7 +58,7 @@ jobs:
           oci: true
 
       - name: Build builder image
-        uses: redhat-actions/buildah-build@v2
+        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c
         with:
           image: packtly-builder-builder
           tags: latest
@@ -81,7 +81,7 @@ jobs:
             | zstd -T0 -10 -o builder.tar.zst
 
       - name: Upload builder image
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: builder-image
           path: builder.tar.zst
@@ -97,16 +97,18 @@ jobs:
     permissions:
       checks: write
       pull-requests: write
+      contents: read
+      actions: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Podman
         uses: ./.github/actions/setup-podman
 
       - name: Download builder image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: builder-image
 
@@ -121,7 +123,7 @@ jobs:
       - name: Run tooling tests
         uses: ./.github/actions/run-in-builder
         with:
-          command: sh -c 'just test-keys && just test'
+          command: sh -c 'just test-keys && just pytest && just flake8 && just mypy'
 
       - name: Build tooling wheel
         uses: ./.github/actions/run-in-builder
@@ -130,22 +132,22 @@ jobs:
           release-version: ${{ needs.version.outputs.release_version }}
 
       - name: Publish test results
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         if: always()
         with:
           name: Pytest Results
           path: packtly-builder/tooling/python-test-results.xml
-          reporter: java-junit
+          reporter: python-xunit
 
       - name: Coverage summary
-        uses: orgoro/coverage@v3.2
+        uses: orgoro/coverage@ca0c362dc1a4f100447309405e6dfea47e251495
         if: always() && github.event_name == 'pull_request'
         with:
           coverageFile: packtly-builder/tooling/coverage.xml
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload coverage html
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-html
@@ -153,7 +155,7 @@ jobs:
           retention-days: 7
 
       - name: Upload tooling wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tooling-wheel
           path: packtly-builder/tooling/dist/
@@ -171,7 +173,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Podman
         uses: ./.github/actions/setup-podman
@@ -184,7 +186,7 @@ jobs:
               --password-stdin
 
       - name: Download tooling wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: tooling-wheel
           path: packtly-builder/tooling/dist
@@ -194,7 +196,7 @@ jobs:
 
       - name: Build runtime image
         id: runtime
-        uses: redhat-actions/buildah-build@v2
+        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c
         with:
           image: ghcr.io/${{ github.repository }}
           tags: latest
@@ -217,7 +219,7 @@ jobs:
             | zstd -T0 -10 -o runtime.tar.zst
 
       - name: Upload runtime image
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: runtime-image
           path: runtime.tar.zst
@@ -225,7 +227,7 @@ jobs:
 
       - name: Push image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: redhat-actions/push-to-registry@v2
+        uses: redhat-actions/push-to-registry@3916dcf329473955be3059ef62c9c062ea1b9054
         with:
           image: ${{ steps.runtime.outputs.image }}
           tags: latest

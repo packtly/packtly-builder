@@ -1,11 +1,10 @@
 import pytest
 import os
 import subprocess
-from pathlib import Path
 import time
-from typing import Any, Sequence
+from pathlib import Path
+from typing import Any, List, Optional
 from unittest.mock import MagicMock
-
 from conftest import ExtraArgs
 from packtly_builder_tooling.parts.debuild import Debuild
 from packtly_builder_tooling.parts.apt import AptManager
@@ -56,7 +55,7 @@ def test_deb_changes_name(debuild_obj: Debuild) -> None:
 
 
 def test_deb_changes_version(debuild_obj: Debuild) -> None:
-    assert debuild_obj.deb_changes_version() == "1.0.0"
+    assert debuild_obj.deb_changes_version() == "1.0.0-1"
 
 
 def test_deb_changes_arch(debuild_obj: Debuild) -> None:
@@ -145,26 +144,23 @@ def test_install_build_dependencies_builds_correct_command(
         "packtly_builder_tooling.parts.debuild.shutil.which", lambda _name: mk_path
     )
 
-    captured: list = []
+    captured: dict[str, Any] = {}
 
-    mock_proc = MagicMock()
-    mock_proc.__enter__ = lambda s: s
-    mock_proc.__exit__ = MagicMock(return_value=False)
-    mock_proc.stdout = iter([])
-    mock_proc.returncode = 0
-
-    def fake_popen(cmd: Sequence[str], **kwargs: Any) -> MagicMock:
-        captured.append(cmd)
-        return mock_proc
+    def fake_run_subprocess(
+        cmd: List[str], cwd: Path, stdin_data: Optional[str] = None
+    ) -> None:
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
 
     monkeypatch.setattr(
-        "packtly_builder_tooling.parts.debuild.subprocess.Popen", fake_popen
+        "packtly_builder_tooling.parts.debuild.run_subprocess",
+        fake_run_subprocess,
     )
 
     obj.install_build_dependencies()
 
-    assert len(captured) == 1
-    cmd = captured[0]
+    cmd = captured["cmd"]
+
     assert cmd[0] == mk_path
     assert "--install" in cmd
     assert "--remove" in cmd
@@ -189,8 +185,14 @@ def test_install_build_dependencies_raises_on_nonzero_exit(
     mock_proc.returncode = 1
 
     monkeypatch.setattr(
-        "packtly_builder_tooling.parts.debuild.subprocess.Popen",
-        lambda *_args, **_kwargs: mock_proc,
+        "packtly_builder_tooling.parts.debuild.run_subprocess",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["/usr/bin/mk-build-deps"],
+                output="error output\n",
+            )
+        ),
     )
 
     with pytest.raises(subprocess.CalledProcessError):

@@ -12,13 +12,6 @@ APTLY_CREDENTIALS_FILE="$SCRIPT_DIR/../aptly-credentials"
 CONTAINER_IMAGE="ghcr.io/packtly/packtly-builder:latest"
 #CONTAINER_IMAGE="packtly-builder:latest"
 
-# --tmpfs /run:exec,mode=0755         replace /run with private tmpfs, bypasses host MS_SHARED propagation (fixes test-mount-util)
-# --cap-add SYS_ADMIN                 allow mount/unmount syscalls (required for --tmpfs and build steps)
-# --cap-add SYS_PTRACE                allow process introspection (required by systemd test-namespace)
-# --security-opt seccomp=unconfined   allow all syscalls including newer ones like mount_setattr
-# --security-opt unmask=all           unmask /proc/acpi, /sys/firmware etc. that podman masks by default
-
-
 PODMAN_COMMON=(
     --rm
     -v "$SCRIPT_DIR":/workspace:Z
@@ -28,16 +21,11 @@ PODMAN_COMMON=(
     -v "$APTLY_CREDENTIALS_FILE":/run/secrets/aptly-credentials:Z,ro
     -v "$SCRIPT_DIR/logs":/logs:Z
     -e APTLYHOST=http://localhost:8080
-    --tmpfs /run:exec,mode=0755
-    --cap-add SYS_ADMIN
-    --cap-add SYS_PTRACE
-    --security-opt seccomp=unconfined
-    --security-opt unmask=all
     --network=host
 )
 
 COMMON_ARGS=(
-    /workspace/systemd
+    /workspace/hplip.v2
     --log-file /logs/build.log
     --dist trixie-apollo
     --component main
@@ -95,7 +83,7 @@ main() {
         run_upload
         ;;
     *)
-        echo "Usage: $0 {build|upload|force-upload|all|all-force-upload}" >&2
+        echo "Usage: $0 {build|upload|force-upload|all-force-upload|all}" >&2
         exit 2
         ;;
     esac

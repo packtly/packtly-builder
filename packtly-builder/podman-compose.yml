@@ -71,4 +71,4 @@ services:
 
 secrets:
   pip.conf:
-    file: ${HOME}/.pip/pip.conf
+    file: ${HOME}/.config/pip/pip.conf

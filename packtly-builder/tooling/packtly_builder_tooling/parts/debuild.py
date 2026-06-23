@@ -1,13 +1,20 @@
 import shutil
-import subprocess
-
+from enum import Enum
 from pathlib import Path
 from debian.deb822 import Deb822
 from typing import List
 from packtly_builder_tooling.parts.hostarch import get_architecture
 from packtly_builder_tooling.logging_setup import setup_logger
+from packtly_builder_tooling.parts.deb_source import DebSourceBuilder
+from packtly_builder_tooling.parts.utils import run_subprocess
 
 logger = setup_logger(__name__)
+
+
+class BuildMode(Enum):
+    BINARY = "-b"  # binary packages only (no .orig tarball required)
+    SOURCE = "-S"  # source package only
+    FULL = "-F"  # source + binary
 
 
 class Debuild:
@@ -20,6 +27,7 @@ class Debuild:
             self._debuild = debuild_executable
             self._builddir = builddir
             self._outdir = Path(builddir).parent.resolve()
+            self._orig_tarball = DebSourceBuilder(builddir, self._outdir)
         else:
             raise FileNotFoundError("debuild executable not found")
 
@@ -53,42 +61,24 @@ class Debuild:
             "--tool=apt-get -y --no-install-recommends",
             str(self.deb_control_file()),
         ]
-        with subprocess.Popen(
-            cmd,
-            cwd=self._outdir,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        ) as proc:
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                logger.info(line.rstrip())
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode, cmd)
+        run_subprocess(cmd, self._outdir)
+
         logger.info("Build dependencies installed successfully.")
 
-    def build(self) -> None:
-        # -b  build binary packages only; skips dpkg-source so no .orig
-        # tarball is required for 3.0 (quilt) source packages.
-        debuild_cmd = [self._debuild, "-uc", "-us", "-b"]
-        with subprocess.Popen(
-            debuild_cmd,
-            cwd=self._builddir,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.PIPE,
-        ) as proc:
-            assert proc.stdin is not None
-            # Answer "y" to debuild's interactive orig-tarball prompt so
-            # the build does not stall or abort in non-tty environments.
-            proc.stdin.write("y\n")
-            proc.stdin.close()
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                logger.info(line.rstrip())
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode, debuild_cmd)
+    def build(self, mode: BuildMode = BuildMode.BINARY) -> None:
+        # -b  binary only  — no .orig tarball required (3.0 quilt or native)
+        # -S  source only  — requires .orig.tar.* in parent dir for quilt
+        # -F  full build   — source + binary
+        debuild_cmd = [self._debuild, "-uc", "-us"]
+        if mode in (BuildMode.SOURCE, BuildMode.FULL):
+            self._orig_tarball.reset_source_tree()
+            self._orig_tarball.ensure_orig_tarball()
+            # The build log is written into a ``logs/`` directory inside the
+            # source tree; tell dpkg-source to ignore it so the live log does
+            # not register as an unrepresentable upstream change.
+            debuild_cmd.append("--source-option=--extend-diff-ignore=(^|/)logs/")
+        debuild_cmd.append(mode.value)
+        run_subprocess(debuild_cmd, self._builddir, stdin_data="y\n")
         logger.info("Debian packages built successfully.")
 
     def builddir(self) -> Path:
@@ -155,5 +145,5 @@ class Debuild:
         return self.deb_changes_key("Version")
 
     def deb_changes_arch(self) -> List[str]:
-        list = self.deb_changes_key("Architecture").split()
-        return list
+        arch_list = self.deb_changes_key("Architecture").split()
+        return arch_list

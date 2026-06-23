@@ -12,7 +12,7 @@ prepare:
         exit 1
     fi
 
-    # Load pip credentials
+    # Load pip credentials from the mounted pip.conf (if present)
     creds=""
     if [ -f /etc/pip.conf ] && command -v parse_pip_conf.py >/dev/null 2>&1; then
         creds="$(parse_pip_conf.py -i0 /etc/pip.conf 2>/dev/null || true)"
@@ -20,9 +20,17 @@ prepare:
     eval "${creds:-}"
 
     if [ -n "${PIP_USERNAME:-}" ] && [ -n "${PIP_PASSWORD:-}" ]; then
-        # Configure poetry with private registry credentials
-        poetry config http-basic.aptlyapipypi "$PIP_USERNAME" "$PIP_PASSWORD"
-        poetry config http-basic.gitlab "$PIP_USERNAME" "$PIP_PASSWORD"
+        # Poetry ignores pip.conf, so point it at the private index explicitly.
+        # 'poetry source add' rewrites pyproject.toml; restore it on exit to keep
+        # the tracked file unchanged (the source is only needed for 'poetry install').
+        if [ -n "${PIP_URL:-}" ]; then
+            cp pyproject.toml pyproject.toml.bak
+            trap 'mv -f pyproject.toml.bak pyproject.toml 2>/dev/null || true' EXIT
+
+            poetry source add --priority=primary private "$PIP_URL"
+        fi
+
+        poetry config http-basic.private "$PIP_USERNAME" "$PIP_PASSWORD"
     else
         echo "No pip credentials found — skipping private registry configuration"
     fi
@@ -60,6 +68,9 @@ mypy:
 
 flake8:
     just _run-dev flake8
+
+cli *args:
+    just _run-dev packtly_builder_tooling {{args}}
 
 black:
     just _run-dev black .
