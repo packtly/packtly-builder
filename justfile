@@ -18,7 +18,7 @@ _keys-volume-args:
 _require-tools:
     #!/usr/bin/env bash
     set -eu
-    for cmd in podman {{ compose }}; do
+    for cmd in podman {{ compose }} yq; do
         command -v "$cmd" >/dev/null 2>&1 || {
             echo "Error: '$cmd' not found in PATH"
             exit 1
@@ -33,22 +33,66 @@ _require-tools:
 _ensure-pip-conf:
     #!/usr/bin/env bash
     set -eu
-    if [ ! -f "${HOME}/.pip/pip.conf" ]; then
-        mkdir -p "${HOME}/.pip"
+    if [ ! -f "${HOME}/.config/pip/pip.conf" ]; then
+        mkdir -p "${HOME}/.config/pip"
         printf '[global]\nbreak-system-packages = true\nindex-url = https://pypi.org/simple\n' \
-            > "${HOME}/.pip/pip.conf"
-        echo "Created minimal ~/.pip/pip.conf (no private registry configured)"
+            > "${HOME}/.config/pip/pip.conf"
+        echo "Created minimal ~/.config/pip/pip.conf (no private registry configured)"
     fi
 
 [private]
-_build-service service: _ensure-pip-conf
+_build-service service arch="amd64": _ensure-pip-conf
     #!/usr/bin/env bash
     set -eu
+
+    case "{{ arch }}" in
+        amd64) platform="linux/amd64" ;;
+        arm64) platform="linux/arm64" ;;
+        *) echo "Unsupported arch: {{ arch }}" >&2; exit 1 ;;
+    esac
+
+    echo "Building {{ service }} for ${platform}"
+
+    export PLATFORM="${platform}"
+    export ARCH="{{ arch }}"
+
     extra=""
     if [ -n "${RELEASE_VERSION:-}" ]; then
         extra="--build-arg VERSION=${RELEASE_VERSION}"
     fi
-    {{ compose }} --file "{{ compose_file }}" build $extra "{{ service }}"
+
+    {{ compose }} \
+        --file "{{ compose_file }}" \
+        build $extra "{{ service }}"
+
+    image="$(yq -r '.services["{{ service }}"].image // ""' "{{ compose_file }}")"
+    if [ -z "$image" ] || [ "$image" = "null" ]; then
+        echo "Error: No image defined for service '{{ service }}' in {{ compose_file }}" >&2
+        exit 1
+    fi
+    podman tag "$image" "${image}-{{ arch }}"
+    podman rmi "$image"
+
+[private]
+_assemble-manifest service:
+    #!/usr/bin/env bash
+    set -eu
+
+    base_image="$(yq -r '.services["{{ service }}"].image' "{{ compose_file }}")"
+    base_name="${base_image%%:*}"
+    manifest="${base_name}:latest"
+
+    echo "Assembling manifest: $manifest"
+
+    # Remove existing manifest list or regular image before creating a fresh manifest.
+    podman manifest rm "$manifest" 2>/dev/null || true
+    podman rmi "$manifest" 2>/dev/null || true
+    podman manifest create "$manifest"
+
+    for arch in amd64 arm64; do
+        podman manifest add "$manifest" "${base_name}:latest-${arch}"
+    done
+
 
 [private]
 _remove-service-image service:
@@ -70,29 +114,63 @@ _remove-service-image service:
     fi
 
 [private]
-_tooling target: _ensure-pip-conf
+_tooling target arch="amd64": _ensure-pip-conf
     #!/usr/bin/env bash
     set -eu
     rm -rf {{ tooling_dir }}/dist
+
+    case "{{ arch }}" in
+        amd64) platform="linux/amd64" ;;
+        arm64) platform="linux/arm64" ;;
+        *) echo "Unsupported arch: {{ arch }}" >&2; exit 1 ;;
+    esac
+
+    echo "Running {{ target}} for ${platform}"
+
+    export PLATFORM="${platform}"
+
     extra=""
     if [ -n "${RELEASE_VERSION:-}" ]; then
         extra="-e RELEASE_VERSION=${RELEASE_VERSION}"
     fi
-    {{ compose }} --file "{{ compose_file }}" run --rm $(just _keys-volume-args) $extra builder "{{ target }}"
+    {{ compose }} \
+        --file "{{ compose_file }}"\
+        run --rm \
+        $(just _keys-volume-args)\
+        $extra \
+        builder "{{ target }}"
 
 # --- build containers ---
 
-build-base: _require-tools
-    just _build-service base
+build-base arch="amd64": _require-tools
+    just _build-service base {{ arch }}
 
-build-builder: _require-tools
-    just _build-service builder
+build-builder arch="amd64": _require-tools
+    just _build-service builder {{ arch }}
 
-build-runtime: _require-tools
-    just _build-service runtime
+build-runtime arch="amd64": _require-tools
+    just _build-service runtime {{ arch }}
 
-build-devcontainer: _require-tools
-    just _build-service devcontainer
+build-devcontainer arch="amd64": _require-tools
+    just compose_file=packtly-builder/podman-compose.devcontainer.yml _build-service devcontainer {{ arch }}
+
+# --- multi arch builds ---
+
+build-builder-multiarch: _require-tools
+    #!/usr/bin/env bash
+    set -eu
+    for arch in amd64 arm64; do
+        just build-builder "$arch"
+    done
+    just _assemble-manifest builder
+
+build-runtime-multiarch: _require-tools
+    #!/usr/bin/env bash
+    set -eu
+    for arch in amd64 arm64; do
+        just build-runtime "$arch"
+    done
+    just _assemble-manifest runtime
 
 # --- clean containers ---
 
@@ -119,11 +197,11 @@ clean-containers: _require-tools
 build-tooling: _require-tools
     just _tooling build
 
-test-tooling: _require-tools
-    just _tooling test
+test-tooling arch="amd64": _require-tools
+    just _tooling test {{ arch }}
 
-test-tooling-keys: _require-tools
-    just _tooling test-keys
+test-tooling-keys arch="amd64": _require-tools
+    just _tooling test-keys {{ arch }}
 
 # --- Runtime helpers ---
 
@@ -146,4 +224,4 @@ all: _require-tools
     just build-builder
     just test-tooling
     just build-tooling
-    just build-runtime
+    just build-runtime-multiarch
