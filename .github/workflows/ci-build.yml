@@ -7,9 +7,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   version:
     runs-on: ubuntu-24.04
@@ -27,293 +24,42 @@ jobs:
 
   builder-image:
     needs: version
-    strategy:
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Set up Podman
-        uses: ./.github/actions/setup-podman
-
-      - name: Create pip.conf
-        uses: ./.github/actions/create-pip-conf
-
-      - name: Build base image
-        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c
-        with:
-          image: packtly-builder-base
-          tags: latest
-          containerfiles: packtly-builder/containers/Containerfile
-          context: packtly-builder
-          build-args: |
-            BASE=debian:trixie-slim
-            CONTEXT_ROOT=containers
-            VERSION=${{ needs.version.outputs.release_version }}
-          extra-args: |
-            --target base
-            --secret id=pip.conf,src=${{ runner.temp }}/pip.conf
-          oci: true
-
-      - name: Build builder image
-        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c
-        with:
-          image: packtly-builder-builder
-          tags: latest
-          containerfiles: packtly-builder/containers/Containerfile
-          context: packtly-builder
-          build-args: |
-            BASE=packtly-builder-base:latest
-            CONTEXT_ROOT=containers
-            VERSION=${{ needs.version.outputs.release_version }}
-          extra-args: |
-            --target build
-            --secret id=pip.conf,src=${{ runner.temp }}/pip.conf
-          oci: true
-
-      - name: Export builder image
-        run: |
-          podman save \
-            --format oci-archive \
-            packtly-builder-builder:latest \
-            | zstd -T0 -10 -o builder.tar.zst
-
-      - name: Upload builder image
-        uses: actions/upload-artifact@v7
-        with:
-          name: builder-image-${{ matrix.arch }}
-          path: builder.tar.zst
-          retention-days: 1
+    uses: ./.github/workflows/_build-builder-image.yml
+    with:
+      release_version: ${{ needs.version.outputs.release_version }}
+    secrets: inherit
 
   tooling:
     needs:
       - version
       - builder-image
-
-    runs-on: ubuntu-24.04
-
+    uses: ./.github/workflows/_tooling.yml
+    with:
+      release_version: ${{ needs.version.outputs.release_version }}
+    secrets: inherit
     permissions:
       checks: write
       pull-requests: write
       contents: read
       actions: read
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Podman
-        uses: ./.github/actions/setup-podman
-
-      - name: Download builder image
-        uses: actions/download-artifact@v8
-        with:
-          name: builder-image-amd64
-
-      - name: Load builder image
-        run: |
-          zstd -d builder.tar.zst -o builder.tar
-          podman load < builder.tar
-
-      - name: Prepare GPG key directory
-        run: mkdir -p Keys/gpg
-
-      - name: Run tooling tests
-        uses: ./.github/actions/run-in-builder
-        with:
-          command: sh -c 'just test-keys && just pytest && just flake8 && just mypy'
-
-      - name: Build tooling wheel
-        uses: ./.github/actions/run-in-builder
-        with:
-          command: just build
-          release-version: ${{ needs.version.outputs.release_version }}
-
-      - name: Publish test results
-        uses: dorny/test-reporter@v3
-        if: always()
-        with:
-          name: Pytest Results
-          path: packtly-builder/tooling/python-test-results.xml
-          reporter: python-xunit
-
-      - name: Coverage summary
-        uses: orgoro/coverage@ca0c362dc1a4f100447309405e6dfea47e251495
-        if: always() && github.event_name == 'pull_request'
-        with:
-          coverageFile: packtly-builder/tooling/coverage.xml
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload coverage html
-        uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: coverage-html
-          path: packtly-builder/tooling/htmlcov
-          retention-days: 7
-
-      - name: Upload tooling wheel
-        uses: actions/upload-artifact@v7
-        with:
-          name: tooling-wheel
-          path: packtly-builder/tooling/dist/
-          retention-days: 7
-
   runtime-image:
     needs:
       - version
       - tooling
-
-    strategy:
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-
-    permissions:
-      packages: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Podman
-        uses: ./.github/actions/setup-podman
-
-      - name: Login to ghcr.io
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            podman login ghcr.io \
-              -u "${{ github.actor }}" \
-              --password-stdin
-
-      - name: Download tooling wheel
-        uses: actions/download-artifact@v8
-        with:
-          name: tooling-wheel
-          path: packtly-builder/tooling/dist
-
-      - name: Create pip.conf
-        uses: ./.github/actions/create-pip-conf
-
-      - name: Build runtime image
-        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c
-        with:
-          image: ghcr.io/${{ github.repository }}
-          tags: latest-${{ matrix.arch }}
-          containerfiles: packtly-builder/containers/Containerfile
-          context: packtly-builder
-          build-args: |
-            BASE=debian:trixie-slim
-            CONTEXT_ROOT=containers
-            VERSION=${{ needs.version.outputs.release_version }}
-          extra-args: |
-            --target image
-            --secret id=pip.conf,src=${{ runner.temp }}/pip.conf
-          oci: true
-
-      - name: Export runtime image
-        run: |
-          podman save \
-            --format oci-archive \
-            ghcr.io/${{ github.repository }}:latest-${{ matrix.arch }} \
-            | zstd -T0 -10 -o runtime.tar.zst
-
-      - name: Upload runtime image
-        uses: actions/upload-artifact@v7
-        with:
-          name: runtime-image-${{ matrix.arch }}
-          path: runtime.tar.zst
-          retention-days: 1
+    uses: ./.github/workflows/_build-runtime-image.yml
+    with:
+      release_version: ${{ needs.version.outputs.release_version }}
+    secrets: inherit
 
   runtime-manifest:
     needs:
       - version
       - runtime-image
-
-    runs-on: ubuntu-24.04
-
+    uses: ./.github/workflows/_runtime-manifest.yml
+    with:
+      release_version: ${{ needs.version.outputs.release_version }}
+    secrets: inherit
     permissions:
       packages: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Podman
-        uses: ./.github/actions/setup-podman
-
-      - name: Login to ghcr.io
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            podman login ghcr.io \
-              -u "${{ github.actor }}" \
-              --password-stdin
-
-      - name: Download runtime image (amd64)
-        uses: actions/download-artifact@v8
-        with:
-          name: runtime-image-amd64
-          path: runtime-amd64
-
-      - name: Download runtime image (arm64)
-        uses: actions/download-artifact@v8
-        with:
-          name: runtime-image-arm64
-          path: runtime-arm64
-
-      - name: Load runtime images
-        run: |
-          zstd -d runtime-amd64/runtime.tar.zst -o runtime-amd64.tar
-          podman load < runtime-amd64.tar
-          zstd -d runtime-arm64/runtime.tar.zst -o runtime-arm64.tar
-          podman load < runtime-arm64.tar
-
-      - name: Assemble manifest
-        run: |
-          IMAGE="ghcr.io/${{ github.repository }}"
-
-          podman manifest rm "${IMAGE}:latest" 2>/dev/null || true
-          podman manifest create "${IMAGE}:latest"
-
-          podman manifest add "${IMAGE}:latest" \
-            "containers-storage:${IMAGE}:latest-amd64"
-
-          podman manifest add "${IMAGE}:latest" \
-            "containers-storage:${IMAGE}:latest-arm64"
-
-          podman manifest inspect "${IMAGE}:latest"
-
-      - name: Export runtime image
-        run: |
-          IMAGE="ghcr.io/${{ github.repository }}"
-          podman save \
-            --format oci-archive \
-            "${IMAGE}:latest" \
-            | zstd -T0 -10 -o runtime.tar.zst
-
-      - name: Upload runtime image
-        uses: actions/upload-artifact@v7
-        with:
-          name: runtime-image
-          path: runtime.tar.zst
-          retention-days: 1
-
-      - name: Push manifest
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          IMAGE="ghcr.io/${{ github.repository }}"
-          podman manifest push --all "${IMAGE}:latest" "docker://${IMAGE}:latest"
 

@@ -1,0 +1,76 @@
+name: Tooling
+
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        required: true
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  tooling:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Podman
+        uses: ./.github/actions/setup-podman
+
+      - name: Download builder image
+        uses: actions/download-artifact@v8
+        with:
+          name: builder-image-amd64
+
+      - name: Load builder image
+        run: |
+          zstd -d builder.tar.zst -o builder.tar
+          podman load < builder.tar
+
+      - name: Prepare GPG key directory
+        run: mkdir -p Keys/gpg
+
+      - name: Run tooling tests
+        uses: ./.github/actions/run-in-builder
+        with:
+          command: sh -c 'just test-keys && just pytest && just flake8 && just mypy'
+
+      - name: Build tooling wheel
+        uses: ./.github/actions/run-in-builder
+        with:
+          command: just build
+          release-version: ${{ inputs.release_version }}
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v3
+        if: always()
+        with:
+          name: Pytest Results
+          path: packtly-builder/tooling/python-test-results.xml
+          reporter: python-xunit
+
+      - name: Coverage summary
+        uses: orgoro/coverage@ca0c362dc1a4f100447309405e6dfea47e251495
+        if: always() && github.event_name == 'pull_request'
+        with:
+          coverageFile: packtly-builder/tooling/coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload coverage html
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage-html
+          path: packtly-builder/tooling/htmlcov
+          retention-days: 7
+
+      - name: Upload tooling wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: tooling-wheel
+          path: packtly-builder/tooling/dist/
+          retention-days: 7
