@@ -63,6 +63,9 @@ main() {
 
     mkdir -p "$SCRIPT_DIR/logs"
     ACTION="${1:-all}"
+    ARCH="${2:-amd64}"
+
+    PODMAN_COMMON+=(--platform "linux/${ARCH}")
 
     case "$ACTION" in
     build)
