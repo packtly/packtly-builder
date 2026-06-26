@@ -27,7 +27,14 @@ jobs:
 
   builder-image:
     needs: version
-    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout repository
@@ -83,7 +90,7 @@ jobs:
       - name: Upload builder image
         uses: actions/upload-artifact@v7
         with:
-          name: builder-image
+          name: builder-image-${{ matrix.arch }}
           path: builder.tar.zst
           retention-days: 1
 
@@ -110,7 +117,7 @@ jobs:
       - name: Download builder image
         uses: actions/download-artifact@v8
         with:
-          name: builder-image
+          name: builder-image-amd64
 
       - name: Load builder image
         run: |
@@ -166,7 +173,14 @@ jobs:
       - version
       - tooling
 
-    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
 
     permissions:
       packages: write
@@ -195,11 +209,10 @@ jobs:
         uses: ./.github/actions/create-pip-conf
 
       - name: Build runtime image
-        id: runtime
         uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c
         with:
           image: ghcr.io/${{ github.repository }}
-          tags: latest
+          tags: latest-${{ matrix.arch }}
           containerfiles: packtly-builder/containers/Containerfile
           context: packtly-builder
           build-args: |
@@ -215,7 +228,80 @@ jobs:
         run: |
           podman save \
             --format oci-archive \
-            ghcr.io/${{ github.repository }}:latest \
+            ghcr.io/${{ github.repository }}:latest-${{ matrix.arch }} \
+            | zstd -T0 -10 -o runtime.tar.zst
+
+      - name: Upload runtime image
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-image-${{ matrix.arch }}
+          path: runtime.tar.zst
+          retention-days: 1
+
+  runtime-manifest:
+    needs:
+      - version
+      - runtime-image
+
+    runs-on: ubuntu-24.04
+
+    permissions:
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Podman
+        uses: ./.github/actions/setup-podman
+
+      - name: Login to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            podman login ghcr.io \
+              -u "${{ github.actor }}" \
+              --password-stdin
+
+      - name: Download runtime image (amd64)
+        uses: actions/download-artifact@v8
+        with:
+          name: runtime-image-amd64
+          path: runtime-amd64
+
+      - name: Download runtime image (arm64)
+        uses: actions/download-artifact@v8
+        with:
+          name: runtime-image-arm64
+          path: runtime-arm64
+
+      - name: Load runtime images
+        run: |
+          zstd -d runtime-amd64/runtime.tar.zst -o runtime-amd64.tar
+          podman load < runtime-amd64.tar
+          zstd -d runtime-arm64/runtime.tar.zst -o runtime-arm64.tar
+          podman load < runtime-arm64.tar
+
+      - name: Assemble manifest
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+
+          podman manifest rm "${IMAGE}:latest" 2>/dev/null || true
+          podman manifest create "${IMAGE}:latest"
+
+          podman manifest add "${IMAGE}:latest" \
+            "containers-storage:${IMAGE}:latest-amd64"
+
+          podman manifest add "${IMAGE}:latest" \
+            "containers-storage:${IMAGE}:latest-arm64"
+
+          podman manifest inspect "${IMAGE}:latest"
+
+      - name: Export runtime image
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+          podman save \
+            --format oci-archive \
+            "${IMAGE}:latest" \
             | zstd -T0 -10 -o runtime.tar.zst
 
       - name: Upload runtime image
@@ -223,13 +309,11 @@ jobs:
         with:
           name: runtime-image
           path: runtime.tar.zst
-          retention-days: 7
+          retention-days: 1
 
-      - name: Push image
+      - name: Push manifest
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: redhat-actions/push-to-registry@3916dcf329473955be3059ef62c9c062ea1b9054
-        with:
-          image: ${{ steps.runtime.outputs.image }}
-          tags: latest
-          registry: ghcr.io
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+          podman manifest push --all "${IMAGE}:latest" "docker://${IMAGE}:latest"
 
