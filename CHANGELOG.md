@@ -16,11 +16,13 @@ RegEx for release version from file
 r"^\#\# \[\d{1,}[.]\d{1,}[.]\d{1,}\] \- \d{4}\-\d{2}-\d{2}$"
 -->
 
-## [1.2.0] - 2026-06-23
+## [1.2.0] - 2026-06-26
 ### Added
 - Source package build
 - Introduced automatic creation of .orig tarballs from the working tree when pristine-tar is not available
 - Added DebSourceBuilder to manage and automate upstream source archive generation.
+- Add of multi architecture support (x86, arm64 and armhf)
+- Add support for full build mode and enhance package existence checks
 
 ### Changed
 - Improved SIGINT / KeyboardInterrupt handling

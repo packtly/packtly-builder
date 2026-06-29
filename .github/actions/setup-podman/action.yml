@@ -25,18 +25,22 @@ runs:
         fi
 
     - name: Cache apt packages
+      id: apt-cache
       uses: actions/cache@v5
       with:
         path: ~/apt-cache
-        key: apt-podman-${{ runner.os }}-${{ hashFiles('.github/actions/setup-podman/action.yml') }}
-        restore-keys: apt-podman-${{ runner.os }}-
+        key: apt-podman-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/actions/setup-podman/action.yml') }}
+        restore-keys: apt-podman-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Install dependencies
       shell: bash
       run: |
         mkdir -p ~/apt-cache
-        sudo apt-get update
+        if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ]; then
+          sudo apt-get update
+        fi
         sudo apt-get install -y -o Dir::Cache::Archives="$HOME/apt-cache" \
+          binfmt-support \
           fuse-overlayfs \
           just \
           podman \
@@ -77,15 +81,18 @@ runs:
         podman system migrate || true
 
     - name: Cache pip packages
+      id: pip-cache
       uses: actions/cache@v5
       with:
         path: ~/.cache/pip
-        key: pip-podman-${{ runner.os }}-podman-compose
+        key: pip-podman-${{ runner.os }}-${{ runner.arch }}-podman-compose
 
     - name: Install podman-compose from PyPI
       shell: bash
       run: |
-        pip install --upgrade pip
+        if [ "${{ steps.pip-cache.outputs.cache-hit }}" != "true" ]; then
+          pip install --upgrade pip
+        fi
         pip install podman-compose
 
     - name: Enable podman socket

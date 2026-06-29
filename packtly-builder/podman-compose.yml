@@ -11,29 +11,8 @@ services:
       target: base
       secrets:
         - pip.conf
+    platform: ${PLATFORM:-linux/amd64}
     image: packtly-builder-base:latest
-
-  devcontainer:
-    build:
-      context: .
-      dockerfile: containers/Containerfile
-      network: host
-      args:
-        - CONTEXT_ROOT=containers
-      target: build
-      secrets:
-        - pip.conf
-    image: packtly-builder-devcontainer:latest
-    volumes:
-      - ..:/workspace:Z
-      - ../Keys/gpg:/opt/keys/gpg:Z
-    network_mode: host
-    secrets:
-      - source: pip.conf
-        target: /etc/pip.conf
-    cap_add:
-      - NET_RAW
-    entrypoint: ["dumb-init", "--", "sleep", "infinity"]
 
   builder:
     build:
@@ -45,6 +24,7 @@ services:
       target: build
       secrets:
         - pip.conf
+    platform: ${PLATFORM:-linux/amd64}
     image: packtly-builder-builder:latest
     volumes:
       - ..:/workspace:Z
@@ -67,6 +47,7 @@ services:
       target: image
       secrets:
         - pip.conf
+    platform: ${PLATFORM:-linux/amd64}
     image: packtly-builder:latest
 
 secrets:

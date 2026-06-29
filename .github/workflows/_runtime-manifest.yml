@@ -1,0 +1,83 @@
+name: Runtime manifest
+
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        required: true
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  manifest:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Podman
+        uses: ./.github/actions/setup-podman
+
+      - name: Login to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            podman login ghcr.io \
+              -u "${{ github.actor }}" \
+              --password-stdin
+
+      - name: Download runtime image (amd64)
+        uses: actions/download-artifact@v8
+        with:
+          name: runtime-image-amd64
+          path: runtime-amd64
+
+      - name: Download runtime image (arm64)
+        uses: actions/download-artifact@v8
+        with:
+          name: runtime-image-arm64
+          path: runtime-arm64
+
+      - name: Download runtime image (armhf)
+        uses: actions/download-artifact@v8
+        with:
+          name: runtime-image-armhf
+          path: runtime-armhf
+
+      - name: Load runtime images
+        run: |
+          zstd -d runtime-amd64/runtime.tar.zst -o runtime-amd64.tar
+          podman load < runtime-amd64.tar
+          zstd -d runtime-arm64/runtime.tar.zst -o runtime-arm64.tar
+          podman load < runtime-arm64.tar
+          zstd -d runtime-armhf/runtime.tar.zst -o runtime-armhf.tar
+          podman load < runtime-armhf.tar
+
+      - name: Assemble manifest
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+
+          podman manifest rm "${IMAGE}:latest" 2>/dev/null || true
+          podman manifest create "${IMAGE}:latest"
+
+          podman manifest add "${IMAGE}:latest" \
+            "containers-storage:${IMAGE}:latest-amd64"
+
+          podman manifest add "${IMAGE}:latest" \
+            "containers-storage:${IMAGE}:latest-arm64"
+
+          podman manifest add "${IMAGE}:latest" \
+            "containers-storage:${IMAGE}:latest-armhf"
+
+          podman manifest inspect "${IMAGE}:latest"
+
+      - name: Push manifest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+          podman manifest push --all "${IMAGE}:latest" "docker://${IMAGE}:latest"

@@ -1,0 +1,50 @@
+#!/bin/bash
+
+set -euo pipefail
+
+RUN_ID="${1:?Usage: $0 <github-run-id>}"
+
+IMAGE="ghcr.io/packtly/packtly-builder"
+IMAGE_TAG="${IMAGE}:dev"
+WORK_DIR="$(mktemp -d)"
+
+cleanup() {
+    rm -rf "$WORK_DIR"
+}
+trap cleanup EXIT
+
+for arch in amd64 arm64 armhf; do
+    echo "Downloading artifact 'runtime-image-${arch}' from run ${RUN_ID}..."
+
+    time gh run download \
+        "${RUN_ID}" \
+        --name "runtime-image-${arch}" \
+        --dir "${WORK_DIR}/${arch}"
+
+    ARCHIVE="${WORK_DIR}/${arch}/runtime.tar.zst"
+
+    if [[ ! -f "${ARCHIVE}" ]]; then
+        echo "Error: ${ARCHIVE} not found"
+        exit 1
+    fi
+
+    echo "Decompressing and loading ${arch} image..."
+
+    zstd -d "${ARCHIVE}" -o "${WORK_DIR}/${arch}.tar"
+
+    podman load < "${WORK_DIR}/${arch}.tar"
+done
+
+echo "Assembling local multi-arch manifest: ${IMAGE_TAG}"
+
+podman manifest rm "${IMAGE_TAG}" 2>/dev/null || true
+podman rmi "${IMAGE_TAG}" 2>/dev/null || true
+podman manifest create "${IMAGE_TAG}"
+
+for arch in amd64 arm64 armhf; do
+    podman manifest add "${IMAGE_TAG}" \
+        "containers-storage:${IMAGE}:latest-${arch}"
+done
+
+echo "Manifest created:"
+podman manifest inspect "${IMAGE_TAG}"

@@ -16,6 +16,14 @@ class BuildMode(Enum):
     SOURCE = "-S"  # source package only
     FULL = "-F"  # source + binary
 
+    @property
+    def description(self) -> str:
+        return {
+            BuildMode.BINARY: "binary (binary packages only)",
+            BuildMode.SOURCE: "source (source package only)",
+            BuildMode.FULL: "full (source + binary)",
+        }[self]
+
 
 class Debuild:
     def __init__(self, builddir: Path) -> None:

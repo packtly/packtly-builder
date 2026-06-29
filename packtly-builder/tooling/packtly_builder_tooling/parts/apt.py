@@ -289,6 +289,49 @@ class AptManager:
             for candidate in pkg.versions
         )
 
+    def source_package_exists(self, dsc_path: Path) -> bool:
+        """Check whether the source package represented by a .dsc file path
+        already exists in the apt source cache.
+
+        Requires ``deb-src`` to be listed in the apt sources entry so that
+        aptly serves the Sources index and apt-get update downloads it.
+        """
+        parsed = self._parse_dsc_file(dsc_path)
+        if parsed is None:
+            return False
+        name, version = parsed
+        try:
+            records = apt_pkg.SourceRecords()
+            while records.lookup(name):
+                if records.version == version:
+                    self.logger.info(
+                        "Source package already present: %s %s", name, version
+                    )
+                    return True
+            return False
+        except Exception:
+            self.logger.exception("Failed source package lookup for %s", dsc_path)
+            return False
+
+    def _parse_dsc_file(self, dsc_path: Path) -> Optional[tuple[str, str]]:
+        """Parse a .dsc file and return (name, version), or None on failure."""
+        path = Path(dsc_path)
+        if not path.is_file():
+            return None
+        try:
+            fields: dict[str, str] = {}
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if ":" in line and not line.startswith(" ") and not line.startswith("-"):
+                    key, _, value = line.partition(":")
+                    fields[key.strip().lower()] = value.strip()
+            name = fields.get("source") or fields.get("package")
+            version = fields.get("version")
+            if name and version:
+                return name, version
+        except Exception:
+            pass
+        return None
+
     def upstream_file_exists(
         self,
         file_path: Path,

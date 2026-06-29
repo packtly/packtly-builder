@@ -1,0 +1,85 @@
+name: Build runtime image
+
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        required: true
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+          - arch: armhf
+            runner: ubuntu-24.04-arm
+            platform: linux/arm/v7
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Podman
+        uses: ./.github/actions/setup-podman
+
+      - name: Enable QEMU binfmt handlers
+        if: matrix.arch == 'armhf'
+        run: sudo update-binfmts --enable
+
+      - name: Login to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            podman login ghcr.io \
+              -u "${{ github.actor }}" \
+              --password-stdin
+
+      - name: Download tooling wheel
+        uses: actions/download-artifact@v8
+        with:
+          name: tooling-wheel
+          path: packtly-builder/tooling/dist
+
+      - name: Create pip.conf
+        uses: ./.github/actions/create-pip-conf
+
+      - name: Build runtime image
+        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c
+        with:
+          image: ghcr.io/${{ github.repository }}
+          tags: latest-${{ matrix.arch }}
+          containerfiles: packtly-builder/containers/Containerfile
+          context: packtly-builder
+          build-args: |
+            BASE=debian:trixie-slim
+            CONTEXT_ROOT=containers
+            VERSION=${{ inputs.release_version }}
+          extra-args: |
+            --target image
+            --platform ${{ matrix.platform }}
+            --secret id=pip.conf,src=${{ runner.temp }}/pip.conf
+          oci: true
+
+      - name: Export runtime image
+        run: |
+          podman save \
+            --format oci-archive \
+            ghcr.io/${{ github.repository }}:latest-${{ matrix.arch }} \
+            | zstd -T0 -10 -o runtime.tar.zst
+
+      - name: Upload runtime image
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-image-${{ matrix.arch }}
+          path: runtime.tar.zst
+          retention-days: 1

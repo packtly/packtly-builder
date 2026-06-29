@@ -11,6 +11,7 @@ services:
       target: build
       secrets:
         - pip.conf
+    platform: ${PLATFORM:-linux/amd64}
     image: packtly-builder-devcontainer:latest
     volumes:
       - ..:/workspace:Z

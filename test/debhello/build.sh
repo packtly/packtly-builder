@@ -30,7 +30,6 @@ COMMON_ARGS=(
     --dist trixie-apollo
     --component main
     --credentials-file /run/secrets/aptly-credentials
-    --build-mode full
 )
 
 run_build() {
@@ -63,6 +62,13 @@ main() {
 
     mkdir -p "$SCRIPT_DIR/logs"
     ACTION="${1:-all}"
+    ARCH="${2:-amd64}"
+
+    PODMAN_COMMON+=(--platform "linux/${ARCH}")
+
+    if [[ "$ARCH" == "amd64" ]]; then
+        COMMON_ARGS+=(--build-mode full)
+    fi
 
     case "$ACTION" in
     build)
