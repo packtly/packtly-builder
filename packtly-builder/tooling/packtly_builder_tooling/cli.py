@@ -13,6 +13,7 @@ from packtly_builder_tooling.parts.debsign import Debsign
 from packtly_builder_tooling.parts.gpg import Gpg
 from packtly_builder_tooling.parts.aptly import Aptly
 from packtly_builder_tooling.parts.apt import AptManager
+from packtly_builder_tooling.parts.hostarch import get_architecture
 
 logger = setup_logger(__name__)
 
@@ -44,6 +45,40 @@ def create_signing_keyring() -> Gpg:
 
 def append_basedir(files_list: List[str], base_dir: str) -> List[str]:
     return [os.path.join(base_dir, element) for element in files_list]
+
+
+def filter_source_files(files: List[str]) -> List[str]:
+    source_exts = (".dsc", ".diff.gz")
+    source_patterns = (".orig.tar.", ".debian.tar.")
+    return [
+        f
+        for f in files
+        if not f.endswith(source_exts) and not any(pat in f for pat in source_patterns)
+    ]
+
+
+def is_already_deployed(
+    aptmanager: AptManager,
+    files: List[str],
+    build_mode: BuildMode,
+    aptlyhost: str,
+    dist_source: Optional[Path],
+) -> bool:
+    aptmanager.update(dist_source)
+    deb_files = [f for f in files if f.endswith(".deb")]
+    if not deb_files:
+        return False
+    if not all(
+        aptmanager.upstream_file_exists(Path(f), source_host=aptlyhost)
+        for f in deb_files
+    ):
+        return False
+    if build_mode == BuildMode.BINARY:
+        return True
+    dsc_files = [f for f in files if f.endswith(".dsc")]
+    if not dsc_files:
+        return True
+    return all(aptmanager.source_package_exists(Path(f)) for f in dsc_files)
 
 
 def establish_aptly_connection(
@@ -110,10 +145,29 @@ def build_package(
     return dbuild
 
 
-def _main(arguments: argparse.Namespace) -> None:
-    builddir = arguments.builddir
-    if not builddir:
-        raise ValueError("No build directory is passed")
+def setup_apt_repository(
+    aptmanager: AptManager,
+    aptlyhost: str,
+    dist: str,
+    endpoint: PublishEndpoint,
+) -> Path:
+    installed_keyring = aptmanager.add_key(
+        PUBLIC_KEY.read_bytes(),
+        "aptly-keyring",
+    )
+
+    components = [source["Component"] for source in endpoint.sources]
+
+    return aptmanager.add_repo(
+        aptlyhost,
+        dist,
+        components,
+        repo_type="deb deb-src",
+        keyring=installed_keyring,
+    )
+
+
+def configure_logger(arguments: argparse.Namespace) -> None:
     verbosity = logging.DEBUG if arguments.verbose else logging.INFO
     set_verbosity(verbosity)
 
@@ -124,6 +178,17 @@ def _main(arguments: argparse.Namespace) -> None:
             logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
         )
         logging.getLogger().addHandler(file_handler)
+
+
+def _main(arguments: argparse.Namespace) -> None:
+    builddir = arguments.builddir
+    if not builddir:
+        raise ValueError("No build directory is passed")
+
+    configure_logger(arguments)
+    logger.info("=== Starting Packtly Builder ===")
+    logger.info("Architecture: %s", get_architecture())
+    logger.info("Build mode: %s", arguments.build_mode.description)
 
     aptlyhost = arguments.aptlyhost or os.environ.get("APTLYHOST")
     dist = arguments.dist
@@ -144,11 +209,12 @@ def _main(arguments: argparse.Namespace) -> None:
     keyid = gpg.signing_key()
     dist_source = None
 
-    if aptlyhost and endpoint:
-        installed_keyring = aptmanager.add_key(PUBLIC_KEY.read_bytes(), "aptly-keyring")
-        components = [s["Component"] for s in endpoint.sources]
-        dist_source = aptmanager.add_repo(
-            aptlyhost, dist, components, keyring=installed_keyring
+    if aptlyhost and endpoint and dist:
+        dist_source = setup_apt_repository(
+            aptmanager,
+            aptlyhost,
+            dist,
+            endpoint,
         )
 
     if aptmanager.update():
@@ -176,6 +242,8 @@ def _main(arguments: argparse.Namespace) -> None:
 
     # Upload if all conditions met
     files = append_basedir(dbuild.deb_changes_files(), str(dbuild.outdir()))
+    if arguments.build_mode == BuildMode.BINARY:
+        files = filter_source_files(files)
     logger.info("Outdir: %s", dbuild.outdir())
     logger.info("Name: %s", dbuild.deb_changes_name())
 
@@ -184,23 +252,20 @@ def _main(arguments: argparse.Namespace) -> None:
         and aptlyclient is not None
         and endpoint is not None
         and keyid is not None
+        and aptlyhost is not None
     )
     if to_upload:
         assert aptlyclient is not None
         assert keyid is not None
+        assert aptlyhost is not None
 
-        already_deployed = False
-        if not arguments.force_upload:
-            aptmanager.update(dist_source)
-            deb_files = [f for f in files if f.endswith(".deb")]
-            already_deployed = (
-                not arguments.force_upload
-                and bool(deb_files)
-                and all(
-                    aptmanager.upstream_file_exists(Path(file), source_host=aptlyhost)
-                    for file in deb_files
-                )
-            )
+        already_deployed = not arguments.force_upload and is_already_deployed(
+            aptmanager,
+            files,
+            arguments.build_mode,
+            aptlyhost,
+            dist_source,
+        )
 
         if already_deployed:
             logger.info("All packages already deployed upstream, skipping upload")
@@ -212,7 +277,7 @@ def _main(arguments: argparse.Namespace) -> None:
                 keyid.fingerprint,
                 gpg.passphrase(),
                 component,
-                force_upload=arguments.force_upload,
+                arguments.force_upload,
             )
 
 
