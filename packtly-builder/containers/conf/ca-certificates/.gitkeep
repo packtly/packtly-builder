@@ -1,0 +1,3 @@
+# Drop corporate/proxy root CA files (*.crt, PEM format) into this folder.
+# They are copied into the image and installed via update-ca-certificates.
+# If empty, the build still works and no extra CAs are added.

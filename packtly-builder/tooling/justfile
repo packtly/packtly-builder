@@ -8,7 +8,7 @@ prepare:
     set -eu
 
     if ! command -v poetry >/dev/null 2>&1; then
-        echo "Please install poetry first: scripts/setup_venv" >&2
+        echo "Please install poetry first" >&2
         exit 1
     fi
 
@@ -34,10 +34,7 @@ prepare:
     else
         echo "No pip credentials found — skipping private registry configuration"
     fi
-
-    # Local project settings
-    poetry config virtualenvs.options.system-site-packages true --local
-
+    rm -f poetry.lock || true
     poetry install --no-interaction --with dev
 
 [private]
