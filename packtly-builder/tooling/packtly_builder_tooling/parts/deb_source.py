@@ -133,8 +133,9 @@ class DebSourceBuilder:
         logger.info("Resetting source tree to committed state before source build")
         # Restore tracked files the clean target deleted or modified.
         repo.git.checkout("--", ".")
-        # Remove untracked and ignored build artifacts (symlinks, binaries, etc.).
-        repo.git.clean("-fdx")
+        # Remove untracked and ignored build artifacts (symlinks, binaries, etc.),
+        # scoped to the build tree so a surrounding repo is never touched.
+        repo.git.clean("-fdx", "--", str(self._builddir))
 
     def _export_orig_via_pristine_tar(self) -> None:
         if not self._gbp:
@@ -244,14 +245,16 @@ class DebSourceBuilder:
         A missing git binary, a non-git source tree, or a missing path simply
         yields ``None`` so callers can fall back to the tree-archive workflow
         without raising. The result is cached for the lifetime of the builder.
+
+        The build tree is opened directly (parent directories are not searched)
+        so a surrounding repository is never mistaken for the source tree — that
+        would scope ``git clean -fdx`` to the wrong working directory.
         """
         if not self._repo_loaded:
             self._repo_loaded = True
             if self._git:
                 try:
-                    self._repo_cache = Repo(
-                        self._builddir, search_parent_directories=True
-                    )
+                    self._repo_cache = Repo(self._builddir)
                 except (InvalidGitRepositoryError, NoSuchPathError):
                     self._repo_cache = None
         return self._repo_cache
