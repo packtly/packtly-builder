@@ -1,7 +1,10 @@
 import shutil
 import tarfile
 from pathlib import Path
+from typing import Optional
 from debian.changelog import Changelog
+from git import Remote, Repo
+from git.exc import InvalidGitRepositoryError, NoSuchPathError
 from packtly_builder_tooling.logging_setup import setup_logger
 from packtly_builder_tooling.parts.utils import run_subprocess
 
@@ -15,6 +18,8 @@ class DebSourceBuilder:
         self._git = shutil.which("git")
         self._gbp = shutil.which("gbp")
         self._dpkg_buildpackage = shutil.which("dpkg-buildpackage")
+        self._repo_loaded = False
+        self._repo_cache: Optional[Repo] = None
         if not self._git:
             logger.warning(
                 "git executable not found — cannot check for pristine-tar branch or "
@@ -121,31 +126,15 @@ class DebSourceBuilder:
         """
         if not self.is_quilt_format():
             return
-        if not self._git:
-            return
 
-        result = run_subprocess(
-            [
-                self._git,
-                "-C",
-                str(self._builddir),
-                "rev-parse",
-                "--is-inside-work-tree",
-            ],
-            cwd=self._builddir,
-            mode="capture",
-            check=False,
-        )
-        if result.returncode != 0 or result.stdout.strip() != "true":
+        repo = self._repo()
+        if repo is None or repo.bare:
             return
         logger.info("Resetting source tree to committed state before source build")
         # Restore tracked files the clean target deleted or modified.
-        cmd_checkout = [self._git, "-C", str(self._builddir), "checkout", "--", "."]
-        run_subprocess(cmd_checkout, self._builddir)
-
+        repo.git.checkout("--", ".")
         # Remove untracked and ignored build artifacts (symlinks, binaries, etc.).
-        cmd_clean = [self._git, "-C", str(self._builddir), "clean", "-fdx"]
-        run_subprocess(cmd_clean, self._builddir)
+        repo.git.clean("-fdx")
 
     def _export_orig_via_pristine_tar(self) -> None:
         if not self._gbp:
@@ -218,26 +207,15 @@ class DebSourceBuilder:
         missing git binary or a non-git source tree simply means the branch is
         absent, so this never raises.
         """
-        if not self._git:
+        repo = self._repo()
+        if repo is None:
             return False
-        for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}"):
-            found = run_subprocess(
-                [
-                    self._git,
-                    "-C",
-                    str(self._builddir),
-                    "show-ref",
-                    "--verify",
-                    "--quiet",
-                    ref,
-                ],
-                self._builddir,
-                mode="silent",
-                check=False,
-            )
-            if found.returncode == 0:
-                return True
-        return False
+        if branch in (head.name for head in repo.heads):
+            return True
+        origin = self._origin(repo)
+        if origin is None:
+            return False
+        return any(ref.remote_head == branch for ref in origin.refs)
 
     def _ensure_local_branch(self, branch: str) -> None:
         """Create a local branch tracking origin/<branch> if it only exists remotely.
@@ -245,52 +223,43 @@ class DebSourceBuilder:
         After a plain ``git clone`` the pristine-tar data is a remote-tracking
         branch; pristine-tar/gbp operate on the local ``refs/heads`` ref.
         """
-        if not self._git:
+        repo = self._repo()
+        if repo is None:
             raise FileNotFoundError("git not found")
-        has_local = run_subprocess(
-            [
-                self._git,
-                "-C",
-                str(self._builddir),
-                "show-ref",
-                "--verify",
-                "--quiet",
-                f"refs/heads/{branch}",
-            ],
-            self._builddir,
-            mode="capture",
-            check=False,
-        )
-        if has_local.returncode == 0:
+        if branch in (head.name for head in repo.heads):
             return
 
-        has_remote = run_subprocess(
-            [
-                self._git,
-                "-C",
-                str(self._builddir),
-                "show-ref",
-                "--verify",
-                "--quiet",
-                f"refs/remotes/origin/{branch}",
-            ],
-            self._builddir,
-            mode="capture",
-            check=False,
-        )
-        if has_remote.returncode != 0:
+        origin = self._origin(repo)
+        if origin is None or branch not in (ref.remote_head for ref in origin.refs):
             raise FileNotFoundError(
                 f"No '{branch}' branch found locally or on origin; cannot "
                 "regenerate the upstream orig tarball"
             )
 
-        cmd = [
-            self._git,
-            "-C",
-            str(self._builddir),
-            "branch",
-            branch,
-            f"origin/{branch}",
-        ]
+        repo.create_head(branch, f"origin/{branch}")
 
-        run_subprocess(cmd, self._builddir)
+    def _repo(self) -> Optional[Repo]:
+        """Return the git repository for the build tree, or ``None``.
+
+        A missing git binary, a non-git source tree, or a missing path simply
+        yields ``None`` so callers can fall back to the tree-archive workflow
+        without raising. The result is cached for the lifetime of the builder.
+        """
+        if not self._repo_loaded:
+            self._repo_loaded = True
+            if self._git:
+                try:
+                    self._repo_cache = Repo(
+                        self._builddir, search_parent_directories=True
+                    )
+                except (InvalidGitRepositoryError, NoSuchPathError):
+                    self._repo_cache = None
+        return self._repo_cache
+
+    @staticmethod
+    def _origin(repo: Repo) -> Optional[Remote]:
+        """Return the ``origin`` remote if it is configured, otherwise ``None``."""
+        try:
+            return repo.remote("origin")
+        except ValueError:
+            return None

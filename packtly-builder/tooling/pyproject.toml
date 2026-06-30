@@ -27,6 +27,7 @@ aptly-api-client = "==0.3.0"
 python = ">=3.10,<4.0"
 python-gnupg = "^0.5.2"
 distro = "^1.9.0"
+GitPython = "^3.1.43"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.14.0"
