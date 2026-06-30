@@ -321,7 +321,11 @@ class AptManager:
         try:
             fields: dict[str, str] = {}
             for line in path.read_text(encoding="utf-8").splitlines():
-                if ":" in line and not line.startswith(" ") and not line.startswith("-"):
+                if (
+                    ":" in line
+                    and not line.startswith(" ")
+                    and not line.startswith("-")
+                ):
                     key, _, value = line.partition(":")
                     fields[key.strip().lower()] = value.strip()
             name = fields.get("source") or fields.get("package")
