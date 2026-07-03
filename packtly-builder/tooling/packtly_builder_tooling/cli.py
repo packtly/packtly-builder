@@ -68,11 +68,19 @@ def is_already_deployed(
     deb_files = [f for f in files if f.endswith(".deb")]
     if not deb_files:
         return False
-    if not all(
-        aptmanager.upstream_file_exists(Path(f), source_host=aptlyhost)
-        for f in deb_files
-    ):
+
+    upstream_exists = True
+    for f in deb_files:
+        upstream_exists = True
+        if aptmanager.upstream_file_exists(Path(f), source_host=aptlyhost):
+            logger.info("[EXISTS]   %s is already deployed upstream", Path(f).name)
+        else:
+            logger.warning("[MISSING]  %s is not deployed upstream", Path(f).name)
+            upstream_exists = False
+
+    if not upstream_exists:
         return False
+
     if build_mode == BuildMode.BINARY:
         return True
     dsc_files = [f for f in files if f.endswith(".dsc")]

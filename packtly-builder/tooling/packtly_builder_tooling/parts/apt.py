@@ -3,9 +3,10 @@ import re
 import base64
 import apt
 import apt_pkg
+import apt_inst
+from debian.deb822 import Deb822
 from pathlib import Path
 from typing import List, Optional, NamedTuple
-import apt_inst
 from aptsources.sourceslist import SourcesList, Deb822SourceEntry
 from aptsources.distro import get_distro
 from packtly_builder_tooling.logging_setup import setup_logger
@@ -68,6 +69,10 @@ class AptManager:
         self.cache = apt.Cache()
         self.distro = get_distro()
         self.logger = setup_logger(__name__)
+
+    # ------------------------------------------------------------------ #
+    # Repository management                                                #
+    # ------------------------------------------------------------------ #
 
     def add_key(self, key_data: bytes | str, name: str) -> Path:
         """
@@ -162,6 +167,10 @@ class AptManager:
             "Apt cache update complete with %d packages available.", len(self.cache)
         )
         return True
+
+    # ------------------------------------------------------------------ #
+    # Package installation                                                 #
+    # ------------------------------------------------------------------ #
 
     def install_dependencies(
         self,
@@ -265,6 +274,10 @@ class AptManager:
         )
         return False
 
+    # ------------------------------------------------------------------ #
+    # Package existence checks                                             #
+    # ------------------------------------------------------------------ #
+
     def package_exists(
         self,
         package_name: str,
@@ -289,9 +302,51 @@ class AptManager:
             for candidate in pkg.versions
         )
 
+    def upstream_file_exists(
+        self,
+        file_path: Path,
+        source_host: Optional[str] = None,
+    ) -> bool:
+        """Check whether the package represented by a .deb file path already
+        exists on *source_host*.
+
+        Parses the .deb control data and delegates to :meth:`package_exists`.
+        Non-deb files (e.g. .buildinfo) that cannot be parsed are silently
+        ignored and return False.
+        """
+        parsed = self._parse_deb_file(file_path)
+        if parsed is None:
+            return False
+        name, version, _arch = parsed
+        return self.package_exists(
+            name,
+            version=version,
+            source_host=source_host,
+        )
+
+    def deb_dsc_extra_files(self, dsc_path: Path) -> List[str]:
+        """Return all files listed in a .dsc.
+
+        dpkg-buildpackage omits the orig tarball from the .changes on
+        non-first uploads.  Aptly needs it to successfully import a source
+        package, so we surface those extra files here.
+        """
+        with open(dsc_path, "r", encoding="utf-8") as fh:
+            dsc_info = Deb822(fh.read().split("\n"))
+
+        dsc_files_str = dsc_info.get_as_string("Files")
+        if not dsc_files_str:
+            return []
+
+        return [line.split()[2] for line in dsc_files_str.strip().split("\n")]
+
     def source_package_exists(self, dsc_path: Path) -> bool:
-        """Check whether the source package represented by a .dsc file path
-        already exists in the apt source cache.
+        """Check whether all source files listed in a .dsc are present in the
+        apt source cache.
+
+        Looks up the source record by name + version in the apt SourceRecords
+        index.  If a matching record is found, all files from the .dsc are
+        logged as [EXISTS]; otherwise each file is logged as [MISSING].
 
         Requires ``deb-src`` to be listed in the apt sources entry so that
         aptly serves the Sources index and apt-get update downloads it.
@@ -300,18 +355,32 @@ class AptManager:
         if parsed is None:
             return False
         name, version = parsed
+
+        source_files = self.deb_dsc_extra_files(dsc_path)
+        if not source_files:
+            return False
+
         try:
             records = apt_pkg.SourceRecords()
+            found = False
             while records.lookup(name):
                 if records.version == version:
-                    self.logger.info(
-                        "Source package already present: %s %s", name, version
-                    )
-                    return True
-            return False
+                    found = True
+                    break
+
+            for f in source_files:
+                if found:
+                    self.logger.info("[EXISTS]   %s (source)", f)
+                else:
+                    self.logger.warning("[MISSING]  %s (source)", f)
+            return found
         except Exception:
             self.logger.exception("Failed source package lookup for %s", dsc_path)
             return False
+
+    # ------------------------------------------------------------------ #
+    # Private helpers                                                      #
+    # ------------------------------------------------------------------ #
 
     def _parse_dsc_file(self, dsc_path: Path) -> Optional[tuple[str, str]]:
         """Parse a .dsc file and return (name, version), or None on failure."""
@@ -336,31 +405,9 @@ class AptManager:
             pass
         return None
 
-    def upstream_file_exists(
-        self,
-        file_path: Path,
-        source_host: Optional[str] = None,
-    ) -> bool:
-        """Check whether the package represented by a .deb file path already
-        exists on *source_host*.
-
-        Parses the filename with :func:`parse_deb_filename` and delegates to
-        :meth:`package_exists`.  Non-deb files (e.g. .buildinfo) that cannot
-        be parsed are silently ignored and return False.
-        """
-        parsed = self._parse_deb_file(file_path)
-        if parsed is None:
-            return False
-        name, version, _arch = parsed
-        return self.package_exists(
-            name,
-            version=version,
-            source_host=source_host,
-        )
-
     def _parse_deb_file(self, filepath: Path) -> Optional[DebFileInfo]:
         """
-        Parse a Debian binary file into a DebFileInfo named tuple.
+        Parse a Debian binary package into a DebFileInfo named tuple.
         Uses apt_inst.DebFile which reads only the control.tar member.
         """
         path = Path(filepath)
