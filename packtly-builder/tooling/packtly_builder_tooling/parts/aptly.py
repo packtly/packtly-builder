@@ -196,6 +196,10 @@ class Aptly:
                     "Failed adding package: %s",
                     uploaded_packages.failed_files,
                 )
+                logger.error(
+                    "Failed adding package report: %s",
+                    uploaded_packages.report.get("Warnings", []),
+                )
                 return False
 
             added_keys = set(uploaded_packages.report.get("Added", []))
