@@ -12,11 +12,11 @@ def _make_builder(builddir: Path, outdir: Path) -> DebSourceBuilder:
     obj = DebSourceBuilder.__new__(DebSourceBuilder)
     obj._builddir = builddir
     obj._outdir = outdir
-    obj._git = "git"
     obj._gbp = "gbp"
     obj._dpkg_buildpackage = "dpkg-buildpackage"
     obj._repo_loaded = False
     obj._repo_cache = None
+    obj._changelog_cache = None
     return obj
 
 

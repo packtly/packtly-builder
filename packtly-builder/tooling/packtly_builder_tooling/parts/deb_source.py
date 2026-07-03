@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 from debian.changelog import Changelog
 from git import Remote, Repo
-from git.exc import InvalidGitRepositoryError, NoSuchPathError
+from git.exc import GitCommandNotFound, InvalidGitRepositoryError, NoSuchPathError
 from packtly_builder_tooling.logging_setup import setup_logger
 from packtly_builder_tooling.parts.utils import run_subprocess
 
@@ -15,16 +15,11 @@ class DebSourceBuilder:
     def __init__(self, builddir: Path, outdir: Path) -> None:
         self._builddir = builddir
         self._outdir = outdir
-        self._git = shutil.which("git")
         self._gbp = shutil.which("gbp")
         self._dpkg_buildpackage = shutil.which("dpkg-buildpackage")
         self._repo_loaded = False
         self._repo_cache: Optional[Repo] = None
-        if not self._git:
-            logger.warning(
-                "git executable not found — cannot check for pristine-tar branch or "
-                "reset the source tree before a quilt source build"
-            )
+        self._changelog_cache: Optional[Changelog] = None
         if not self._gbp:
             logger.warning(
                 "gbp executable not found — cannot regenerate the upstream orig tarball "
@@ -45,13 +40,6 @@ class DebSourceBuilder:
     def is_quilt_format(self) -> bool:
         """True for non-native quilt packages that need a separate .orig tarball."""
         return self.source_format().startswith("3.0 (quilt)")
-
-    def _changelog(self) -> Changelog:
-        changelog_file = self._builddir / "debian" / "changelog"
-        if not changelog_file.is_file():
-            raise FileNotFoundError(f"Changelog file not found at {changelog_file}")
-
-        return Changelog(changelog_file.read_text(encoding="utf-8"))
 
     def source_name(self) -> str:
         return self._changelog().package or ""
@@ -136,6 +124,19 @@ class DebSourceBuilder:
         # Remove untracked and ignored build artifacts (symlinks, binaries, etc.),
         # scoped to the build tree so a surrounding repo is never touched.
         repo.git.clean("-fdx", "--", str(self._builddir))
+        # Invalidate cached changelog — git checkout may have restored a different version.
+        self._changelog_cache = None
+
+    def _changelog(self) -> Changelog:
+        changelog_file = self._builddir / "debian" / "changelog"
+        if not changelog_file.is_file():
+            raise FileNotFoundError(f"Changelog file not found at {changelog_file}")
+
+        if self._changelog_cache is None:
+            self._changelog_cache = Changelog(
+                changelog_file.read_text(encoding="utf-8")
+            )
+        return self._changelog_cache
 
     def _export_orig_via_pristine_tar(self) -> None:
         if not self._gbp:
@@ -226,7 +227,13 @@ class DebSourceBuilder:
         """
         repo = self._repo()
         if repo is None:
-            raise FileNotFoundError("git not found")
+            logger.error(
+                "Build directory %s is not a git repository; cannot create local branch %r",
+                self._builddir,
+                branch,
+            )
+            raise FileNotFoundError(f"{self._builddir} is not a git repository")
+
         if branch in (head.name for head in repo.heads):
             return
 
@@ -240,23 +247,18 @@ class DebSourceBuilder:
         repo.create_head(branch, f"origin/{branch}")
 
     def _repo(self) -> Optional[Repo]:
-        """Return the git repository for the build tree, or ``None``.
+        """Return the git repository for the build tree, or ``None`` (cached).
 
-        A missing git binary, a non-git source tree, or a missing path simply
-        yields ``None`` so callers can fall back to the tree-archive workflow
-        without raising. The result is cached for the lifetime of the builder.
-
-        The build tree is opened directly (parent directories are not searched)
-        so a surrounding repository is never mistaken for the source tree — that
-        would scope ``git clean -fdx`` to the wrong working directory.
+        Opens the build tree directly (no parent search) so a surrounding
+        repository is never mistaken for the source tree.  Returns ``None``
+        when git is unavailable or the directory is not a repository.
         """
         if not self._repo_loaded:
             self._repo_loaded = True
-            if self._git:
-                try:
-                    self._repo_cache = Repo(self._builddir)
-                except (InvalidGitRepositoryError, NoSuchPathError):
-                    self._repo_cache = None
+            try:
+                self._repo_cache = Repo(self._builddir, search_parent_directories=False)
+            except (GitCommandNotFound, InvalidGitRepositoryError, NoSuchPathError):
+                self._repo_cache = None
         return self._repo_cache
 
     @staticmethod
