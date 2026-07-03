@@ -44,6 +44,7 @@ RUN apt-get update && \
   python3 \
   python3-pip \
   python3-apt \
+  python3-venv \
   dumb-init \
   locales \
   ca-certificates \
@@ -54,6 +55,10 @@ RUN apt-get update && \
   echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
   locale-gen && \
   rm -rf /var/lib/apt/lists/*
+
+# Optional CA certificates to be added to the system store
+COPY ${CONTEXT_ROOT}/conf/ca-certificates/ /usr/local/share/ca-certificates/
+RUN update-ca-certificates
 
 RUN mkdir -p /etc/gnupg && chmod 700 /etc/gnupg
 
@@ -69,11 +74,13 @@ COPY ${CONTEXT_ROOT}/conf/rtprio.conf /etc/security/limits.d/
 FROM base AS build
 ARG CONTEXT_ROOT=.
 
-# Use a virtualenv in the build stage so Poetry is isolated from system packages
-# but include system site packages so Debian-only modules like python3-apt are importable.
-ENV POETRY_VIRTUALENVS_CREATE=true \
-  POETRY_VIRTUALENVS_OPTIONS_SYSTEM_SITE_PACKAGES=true \
-  POETRY_VIRTUALENVS_PATH=/opt/poetry-venvs
+# Fixed-path venv (survives the ephemeral build mount into the devcontainer) with
+# --system-site-packages for python3-apt; Poetry installs into it (create=false).
+ENV VIRTUAL_ENV=/opt/venv \
+  PATH=/opt/venv/bin:$PATH \
+  POETRY_VIRTUALENVS_CREATE=false
+
+RUN python3 -m venv --system-site-packages /opt/venv
 
 RUN mkdir -p /etc/apt/keyrings && \
   wget -qO- https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \

@@ -16,16 +16,24 @@ RegEx for release version from file
 r"^\#\# \[\d{1,}[.]\d{1,}[.]\d{1,}\] \- \d{4}\-\d{2}-\d{2}$"
 -->
 
-## [1.2.0] - 2026-06-26
+## [1.2.0] - 2026-07-04
 ### Added
 - Source package build
 - Introduced automatic creation of .orig tarballs from the working tree when pristine-tar is not available
 - Added DebSourceBuilder to manage and automate upstream source archive generation.
 - Add of multi architecture support (x86, arm64 and armhf)
 - Add support for full build mode and enhance package existence checks
+- `deb_source`: cache parsed changelog; invalidate after `git checkout` in `reset_source_tree`
 
 ### Changed
 - Improved SIGINT / KeyboardInterrupt handling
+- `debuild`: pass `-sa` flag to always include orig tarball in `.changes` for source/full builds
+- `apt`: improve binary and source package existence detection with per-file `[EXISTS]`/`[MISSING]` logging
+- `AptManager`: reorganise class into logical sections (repository, installation, existence checks, private helpers)
+- `log`: add error logging for failed package upload
+
+### Fixed
+- Source package upload no longer fails when `.orig.tar.*` is absent from `.changes` on non-first revisions
 
 
 ## [1.1.0] - 2026-06-11

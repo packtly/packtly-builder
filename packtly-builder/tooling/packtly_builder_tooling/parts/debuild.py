@@ -74,17 +74,22 @@ class Debuild:
         logger.info("Build dependencies installed successfully.")
 
     def build(self, mode: BuildMode = BuildMode.BINARY) -> None:
-        # -b  binary only  — no .orig tarball required (3.0 quilt or native)
-        # -S  source only  — requires .orig.tar.* in parent dir for quilt
-        # -F  full build   — source + binary
+        # debuild flags:
+        #   -uc / -us  skip GPG signing of .changes and .dsc (we sign later via debsign)
+        #   -b         binary only  — no .orig tarball required (3.0 quilt or native)
+        #   -S         source only  — requires .orig.tar.* in parent dir for quilt
+        #   -F         full build   — source + binary
+        #   -sa        always include the orig tarball in the .changes file.
+        #              dpkg-buildpackage normally omits it for Debian revisions > -1
+        #              (assuming the archive already has it), but aptly has no such
+        #              state and requires all files referenced by the .dsc to be
+        #              present during import.
         debuild_cmd = [self._debuild, "-uc", "-us"]
         if mode in (BuildMode.SOURCE, BuildMode.FULL):
             self._orig_tarball.reset_source_tree()
             self._orig_tarball.ensure_orig_tarball()
-            # The build log is written into a ``logs/`` directory inside the
-            # source tree; tell dpkg-source to ignore it so the live log does
-            # not register as an unrepresentable upstream change.
             debuild_cmd.append("--source-option=--extend-diff-ignore=(^|/)logs/")
+            debuild_cmd.append("-sa")
         debuild_cmd.append(mode.value)
         run_subprocess(debuild_cmd, self._builddir, stdin_data="y\n")
         logger.info("Debian packages built successfully.")

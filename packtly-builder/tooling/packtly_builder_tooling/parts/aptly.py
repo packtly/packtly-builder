@@ -47,9 +47,7 @@ class Aptly:
             RequestException,
             AptlyAPIException,
         ) as e:
-            raise ConnectionError(
-                f"Could not reach aptly server at {host}"
-            ) from e
+            raise ConnectionError(f"Could not reach aptly server at {host}") from e
 
     def get_publish_endpoint(
         self,
@@ -197,6 +195,10 @@ class Aptly:
                 logger.error(
                     "Failed adding package: %s",
                     uploaded_packages.failed_files,
+                )
+                logger.error(
+                    "Failed adding package report: %s",
+                    uploaded_packages.report.get("Warnings", []),
                 )
                 return False
 

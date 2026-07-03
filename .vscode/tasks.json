@@ -3,12 +3,15 @@
     "tasks": [
         {
             "label": "packtly_builder_tooling",
-            "type": "vscode-just",
-            "task": "just",
+            "type": "shell",
+            "command": "just",
             "args": [
                 "--justfile=${workspaceFolder}/packtly-builder/tooling/justfile",
                 "${input:justRecipe}"
             ],
+            "options": {
+                "cwd": "${workspaceFolder}/packtly-builder/tooling"
+            },
             "problemMatcher": []
         }
     ],

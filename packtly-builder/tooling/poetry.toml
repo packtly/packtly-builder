@@ -1,2 +1,4 @@
-[virtualenvs.options]
-system-site-packages = true
+# Use the image's pre-activated venv (/opt/venv, via VIRTUAL_ENV) instead of
+# letting Poetry create its own, so the interpreter path stays stable.
+[virtualenvs]
+create = false
