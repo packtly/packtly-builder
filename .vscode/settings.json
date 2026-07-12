@@ -9,7 +9,7 @@
     "python.testing.pytestArgs": [
         "-s",
         "--verbose",
-        "--dpkgbuild=test/debhello",
+        "--dpkgbuild=test/fixtures/debhello-quilt",
         "--no-cov",
         "packtly-builder/tooling/packtly_builder_tooling"
     ],

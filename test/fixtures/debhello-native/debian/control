@@ -1,10 +1,10 @@
 Source: debhello
-Section: non-free/graphics
+Section: utils
 Priority: optional
 Maintainer: Thomas Willetal <t.willetal@gmx.de>
-Build-Depends: debhelper (>=12),
-               libgtest-dev
-Standards-Version: 3.9.6
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
 
 Package: debhello
 Architecture: any
