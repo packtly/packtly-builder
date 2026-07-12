@@ -31,7 +31,7 @@ class Debuild:
         self.parsed_control_info = Deb822()
         self.parsed_deb_info = Deb822()
         if debuild_executable:
-            print("debuild executable found at:", debuild_executable)
+            logger.info("debuild executable found at: %s", debuild_executable)
             self._debuild = debuild_executable
             self._builddir = builddir
             self._outdir = Path(builddir).parent.resolve()
