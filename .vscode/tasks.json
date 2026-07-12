@@ -13,6 +13,14 @@
                 "cwd": "${workspaceFolder}/packtly-builder/tooling"
             },
             "problemMatcher": []
+        },
+        {
+            "label": "run robot tests",
+            "type": "shell",
+            "command": "${workspaceFolder}/test/robot/run.sh",
+            "problemMatcher": [
+                "$python"
+            ]
         }
     ],
     "inputs": [
