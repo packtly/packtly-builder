@@ -45,13 +45,20 @@ jobs:
           command: just build
           release-version: ${{ inputs.release_version }}
 
-      - name: Publish test results
-        uses: dorny/test-reporter@v3
+      - name: Publish Unit Test Results
+        uses: mikepenz/action-junit-report@v6
         if: always()
         with:
-          name: Pytest Results
-          path: packtly-builder/tooling/python-test-results.xml
-          reporter: python-xunit
+          comment: true
+          detailed_summary: true
+          group_suite: true
+          include_passed: true
+          include_time_in_summary: true
+          job_summary: true
+          report_paths: packtly-builder/tooling/python-test-results.xml
+          simplified_summary: false
+          skip_success_summary: false
+          updateComment: true
 
       - name: Coverage summary
         uses: orgoro/coverage@ca0c362dc1a4f100447309405e6dfea47e251495

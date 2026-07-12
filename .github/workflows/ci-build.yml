@@ -63,3 +63,13 @@ jobs:
     permissions:
       packages: write
 
+  robot-tests:
+    needs:
+      - runtime-manifest
+    uses: ./.github/workflows/_robot-tests.yml
+    with:
+      release_version: ${{ needs.version.outputs.release_version }}
+    secrets: inherit
+    permissions:
+      checks: write
+      pull-requests: write

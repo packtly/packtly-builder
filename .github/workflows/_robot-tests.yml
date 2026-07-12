@@ -1,0 +1,66 @@
+name: Robot Tests
+
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        required: true
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  robot-tests:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Podman
+        uses: ./.github/actions/setup-podman
+
+      - name: Login to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            podman login ghcr.io \
+              -u "${{ github.actor }}" \
+              --password-stdin
+
+      - name: Download runtime image (amd64)
+        uses: actions/download-artifact@v8
+        with:
+          name: runtime-image-amd64
+
+      - name: Load runtime image
+        run: |
+          zstd -d runtime.tar.zst -o runtime.tar
+          podman load < runtime.tar
+          podman images
+          podman tag \
+            ghcr.io/${{ github.repository }}:latest-amd64 \
+            packtly-builder:latest
+
+      - name: Run Robot Framework tests
+        run: ./test/robot/run.sh
+
+      - name: Fix step summary permissions for Robot Reporter
+        if: always()
+        run: chmod o+w "$(dirname "$GITHUB_STEP_SUMMARY")"
+
+      - name: Robot Reporter
+        if: always() && github.event_name == 'pull_request'
+        uses: joonvena/robotframework-reporter-action@v2.5
+        with:
+          gh_access_token: ${{ secrets.GITHUB_TOKEN }}
+          report_path: test/robot/results
+
+      - name: Upload Robot results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: robot-results
+          path: test/robot/results
+          if-no-files-found: warn
+          retention-days: 7
