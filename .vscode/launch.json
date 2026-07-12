@@ -2,7 +2,25 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "builder_tooling_upload",
+            "name": "packtly_build_full",
+            "stopOnEntry": true,
+            "type": "debugpy",
+            "request": "launch",
+            "module": "packtly_builder_tooling.cli",
+            "cwd": "${workspaceFolder}/packtly-builder/tooling",
+            "args": [
+                "--aptlyhost=http://localhost:8080",
+                "--credentials-file=${workspaceFolder}/test/aptly-credentials",
+                "--dist=trixie-apollo",
+                "--component=main",
+                "--build-mode=full",
+                "${workspaceFolder}/test/fixtures/debhello-quilt",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "packtly_upload",
             "stopOnEntry": true,
             "type": "debugpy",
             "request": "launch",
@@ -16,25 +34,7 @@
                 "--no-build",
                 "--build-mode=full",
                 "--upload",
-                "${workspaceFolder}/test/debhello",
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": false
-        },
-        {
-            "name": "builder_tooling_build_full",
-            "stopOnEntry": true,
-            "type": "debugpy",
-            "request": "launch",
-            "module": "packtly_builder_tooling.cli",
-            "cwd": "${workspaceFolder}/packtly-builder/tooling",
-            "args": [
-                "--aptlyhost=http://localhost:8080",
-                "--credentials-file=${workspaceFolder}/test/aptly-credentials",
-                "--dist=trixie-apollo",
-                "--component=main",
-                "--build-mode=full",
-                "${workspaceFolder}/test/debhello",
+                "${workspaceFolder}/test/fixtures/debhello-quilt",
             ],
             "console": "integratedTerminal",
             "justMyCode": false

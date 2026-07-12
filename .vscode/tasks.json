@@ -21,6 +21,44 @@
             "problemMatcher": [
                 "$python"
             ]
+        },
+        {
+            "label": "packtly_build_full",
+            "type": "shell",
+            "command": "/opt/venv/bin/python",
+            "args": [
+                "-m", "packtly_builder_tooling.cli",
+                "--aptlyhost=http://localhost:8080",
+                "--credentials-file=${workspaceFolder}/test/aptly-credentials",
+                "--dist=trixie-apollo",
+                "--component=main",
+                "--build-mode=full",
+                "${workspaceFolder}/test/fixtures/debhello-quilt"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/packtly-builder/tooling"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "packtly_upload",
+            "type": "shell",
+            "command": "/opt/venv/bin/python",
+            "args": [
+                "-m", "packtly_builder_tooling.cli",
+                "--aptlyhost=http://localhost:8080",
+                "--credentials-file=${workspaceFolder}/test/aptly-credentials",
+                "--dist=trixie-apollo",
+                "--component=main",
+                "--no-build",
+                "--build-mode=full",
+                "--upload",
+                "${workspaceFolder}/test/fixtures/debhello-quilt"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/packtly-builder/tooling"
+            },
+            "problemMatcher": []
         }
     ],
     "inputs": [
