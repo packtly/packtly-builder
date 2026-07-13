@@ -16,6 +16,14 @@ RegEx for release version from file
 r"^\#\# \[\d{1,}[.]\d{1,}[.]\d{1,}\] \- \d{4}\-\d{2}-\d{2}$"
 -->
 
+## [1.3.0] - 2026-07-13
+### Added
+- Robot Framework integration test environment for end-to-end validation of packtly-builder builds via Podman
+- Robot test runner, keywords, and a Debian example build/verification suite
+- Debian packaging fixtures (`test/fixtures/debhello-quilt`) for integration testing
+- CI workflow for running Robot Framework tests with artifact upload and PR reporting via `robotframework-reporter-action`
+
+
 ## [1.2.0] - 2026-07-04
 ### Added
 - Source package build
