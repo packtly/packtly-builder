@@ -193,24 +193,58 @@ class AptManager:
             return False
 
         package_name, req_version, req_relation = parsed[0][0]
+        self.cache.open()
+        is_virtual = package_name not in self.cache
+        resolved_name: Optional[str] = None
+
         if req_version and req_relation:
-            self.cache.open()
             resolved_name = self._resolve_package_name(package_name)
             if resolved_name is None:
                 self.logger.error("Package '%s' not found in cache.", package_name)
                 return False
 
-            pkg = self.cache[resolved_name]
-            candidate = pkg.candidate
-            if not apt_pkg.check_dep(candidate.version, req_relation, req_version):
-                self.logger.error(
-                    "Package '%s' candidate %s does not satisfy %s %s",
-                    resolved_name,
-                    candidate.version,
-                    req_relation,
-                    req_version,
-                )
+            if is_virtual:
+                # For virtual packages the version constraint applies to the
+                # *provided* version, not the real provider's version.  Check
+                # that at least one provides entry satisfies the constraint.
+                try:
+                    apt_pkg_entry = self.cache._cache[package_name]
+                    satisfied = any(
+                        prov[1]
+                        and apt_pkg.check_dep(prov[1], req_relation, req_version)
+                        for prov in apt_pkg_entry.provides_list
+                        if prov[2].parent_pkg.name == resolved_name
+                    )
+                except (KeyError, AttributeError):
+                    satisfied = False
+                if not satisfied:
+                    self.logger.error(
+                        "No provider for '%s %s %s' found in cache.",
+                        package_name,
+                        req_relation,
+                        req_version,
+                    )
+                    return False
+            else:
+                pkg = self.cache[resolved_name]
+                candidate = pkg.candidate
+                if not apt_pkg.check_dep(candidate.version, req_relation, req_version):
+                    self.logger.error(
+                        "Package '%s' candidate %s does not satisfy %s %s",
+                        resolved_name,
+                        candidate.version,
+                        req_relation,
+                        req_version,
+                    )
+                    return False
+
+        if is_virtual:
+            # Install the real provider; do not pin to the virtual version.
+            install_name = resolved_name or self._resolve_package_name(package_name)
+            if install_name is None:
+                self.logger.error("Package '%s' not found in cache.", package_name)
                 return False
+            return self.install_package(install_name, source_host=source_host)
 
         pinned_version = req_version if req_relation in ("=", "==") else None
 
@@ -433,11 +467,12 @@ class AptManager:
         if package_name in self.cache:
             return package_name
 
-        # The name may be a virtual package.  Walk rev_provides_list to
+        # The name may be a virtual package.  Walk provides_list to
         # find a real package that satisfies it.
+        # provides_list entries are tuples: (virtual_name, provided_version, apt_pkg.Version)
         try:
             apt_pkg_entry = self.cache._cache[package_name]
-            providers = [v.parent_pkg.name for v in apt_pkg_entry.rev_provides_list]
+            providers = [v[2].parent_pkg.name for v in apt_pkg_entry.provides_list]
         except (KeyError, AttributeError):
             providers = []
 

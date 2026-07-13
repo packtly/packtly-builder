@@ -101,6 +101,14 @@ runs:
         systemctl --user enable --now podman.socket
         echo "DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock" >> $GITHUB_ENV
 
+    - name: Expose Podman socket as /var/run/docker.sock
+      shell: bash
+      run: |
+        # GitHub Actions container-based actions mount /var/run/docker.sock
+        # hardcoded. Symlink it to the Podman socket so those actions work.
+        sudo ln -sf "$XDG_RUNTIME_DIR/podman/podman.sock" /var/run/docker.sock
+#        sudo chmod 666 "$XDG_RUNTIME_DIR/podman/podman.sock"
+
     - name: Verify Podman and podman-compose
       shell: bash
       run: |

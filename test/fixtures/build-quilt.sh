@@ -9,12 +9,12 @@ TOPDIR="$(git rev-parse --show-toplevel)"
 KEYS_DIR="$TOPDIR/../packtly-infra/ansible/generated-secrets/localhost"
 APTLY_CREDENTIALS_FILE="$SCRIPT_DIR/../aptly-credentials"
 
-CONTAINER_IMAGE="ghcr.io/packtly/packtly-builder:latest"
-#CONTAINER_IMAGE="packtly-builder:latest"
+#CONTAINER_IMAGE="ghcr.io/packtly/packtly-builder:latest"
+CONTAINER_IMAGE="packtly-builder:latest"
 
 PODMAN_COMMON=(
     --rm
-    -v "$SCRIPT_DIR/..":/workspace:Z
+    -v "$SCRIPT_DIR":/workspace:Z
     -v "$KEYS_DIR/public/repo_signing.key":/opt/keys/gpg/repo_signing.key:Z,ro
     -v "$KEYS_DIR/private/repo_signing_private.key":/opt/keys/gpg/repo_signing_private.key:Z,ro
     -v "$KEYS_DIR/private/repo_signing_private_pass":/opt/keys/gpg/repo_signing_private_pass:Z,ro
@@ -25,7 +25,7 @@ PODMAN_COMMON=(
 )
 
 COMMON_ARGS=(
-    /workspace/debhello
+    /workspace/debhello-quilt
     --log-file /logs/build.log
     --dist trixie-apollo
     --component main

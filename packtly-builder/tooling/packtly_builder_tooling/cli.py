@@ -145,8 +145,12 @@ def build_package(
         logger.info("Skipping build step (--no-build)")
         return dbuild
 
-    dbuild.install_build_dependencies()
-    dbuild.build(mode=build_mode)
+    try:
+        dbuild.install_build_dependencies()
+        dbuild.build(mode=build_mode)
+    except FileNotFoundError as exc:
+        logger.error("Build failed: %s", exc)
+        raise SystemExit(1) from exc
 
     logger.info("Changes file: %s", dbuild.deb_changes_file())
     logger.info("Architecture: %s", dbuild.deb_changes_arch())

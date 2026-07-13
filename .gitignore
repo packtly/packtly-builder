@@ -42,3 +42,11 @@ cover/
 python-test-results.xml
 test-output.xml
 *.log
+
+# Robot Framework artifacts
+output.xml
+report.html
+log.html
+xunit.xml
+debugfile.txt
+test/robot/results/

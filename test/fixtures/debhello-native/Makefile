@@ -6,7 +6,7 @@ src/hello: src/hello.c
 	@echo "CFLAGS=$(CFLAGS)" | \
 		fold -s -w 70 | \
 		sed -e 's/^/# /'
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDCFLAGS) -o $@ $^
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 install: src/hello
 	install -D src/hello \
