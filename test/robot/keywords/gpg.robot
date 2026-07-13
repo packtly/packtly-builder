@@ -37,8 +37,9 @@ Generate GPG Keys
     ...    --name    ${name}
     ...    --email    ${email}
     ...    --pass    ${pass}
-    ...    stdout=PIPE    stderr=PIPE
 
+    Log    ${result.stdout}
+    Log    ${result.stderr}
     Should Be Equal As Integers    ${result.rc}    0    ${result.stderr}
 
     Move File    ${gpg_out}/repo_signing.key             ${keys_dir}/public/repo_signing.key

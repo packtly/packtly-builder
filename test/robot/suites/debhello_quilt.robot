@@ -13,6 +13,7 @@ Suite Teardown    Run Keyword If    '${WORKSPACE}' != ''    Remove Directory    
 ${FIXTURES_DIR}         ${CURDIR}/../../fixtures
 ${DEBHELLO_DIR}         ${FIXTURES_DIR}/debhello-quilt
 ${CONTAINER_IMAGE}      packtly-builder:latest
+${DEBIAN_IMAGE}          debian:trixie
 ${APTLY_CREDENTIALS}    ${EMPTY}
 ${WORKSPACE}            ${EMPTY}
 ${KEYS_DIR}             ${EMPTY}
@@ -58,7 +59,6 @@ Run Debhello Quilt Build
     Copy File    ${workspace}/logs/build.log    ${CURDIR}/../results/debhello_build.log
     Should Be Equal As Integers    ${result.rc}    0
     ...    Build failed with rc ${result.rc}. See stdout/stderr and build.log above.
-
 
 Verify Build Artifacts
     [Documentation]    Verify a successful build produced valid .changes and .deb artifacts.
@@ -107,6 +107,27 @@ Verify Changes Signature
     Should Contain    ${result.stdout}    [GNUPG:] GOODSIG
     Should Contain    ${result.stdout}    [GNUPG:] VALIDSIG
 
+Verify Package Is Installable
+    [Documentation]    Verify each produced .deb can be installed with dpkg inside the build container.
+    [Arguments]    ${workspace}    ${image}
+
+    ${debs}=    List Files In Directory    ${workspace}    *.deb    absolute=True
+    Should Not Be Empty    ${debs}    No .deb packages found to install
+
+    FOR    ${deb}    IN    @{debs}
+        ${deb_name}=    Set Variable    ${deb.rsplit('/', 1)[1]}
+        ${result}=    Run Process
+        ...    podman    run    --rm
+        ...    --entrypoint    sh
+        ...    -v    ${workspace}:/workspace:Z,ro
+        ...    ${image}
+        ...    -c    dpkg --install --force-depends /workspace/${deb_name}
+        Log    ${result.stdout}
+        Log    ${result.stderr}
+        Should Be Equal As Integers    ${result.rc}    0
+        ...    dpkg --install failed for ${deb_name}: ${result.stderr}
+    END
+
 Verify Source Package Artifacts
     [Documentation]    Verify source package artifacts (.dsc + referenced tarballs) exist and pass dpkg-source integrity check.
     [Arguments]    ${workspace}    ${image}
@@ -120,7 +141,7 @@ Verify Source Package Artifacts
     ...    --entrypoint    sh
     ...    -v    ${workspace}:/workspace:Z,ro
     ...    ${image}
-    ...    -c    dpkg-source -x /workspace/${dsc_file} /tmp/src-check && rm -rf /tmp/src-check
+    ...    -c    command -v dpkg-source || apt-get update -qq && apt-get install -y --no-install-recommends dpkg-dev && dpkg-source -x /workspace/${dsc_file} /tmp/src-check && rm -rf /tmp/src-check
 
     Log    ${result.stdout}
     Log    ${result.stderr}
@@ -174,6 +195,11 @@ Changes File Is Signed
     [Tags]    debhello    build    signature
     Verify Changes Signature    ${WORKSPACE}    ${KEYS_DIR}    ${CONTAINER_IMAGE}
 
+Binary Package Is Installable
+    [Documentation]    Verify each produced .deb can be installed with dpkg on a clean Debian image.
+    [Tags]    debhello    install    binary
+    Verify Package Is Installable    ${WORKSPACE}    ${DEBIAN_IMAGE}
+
 Source Package Is Valid
     [Documentation]    Verify the .dsc and referenced source tarballs pass dpkg-source integrity check.
     [Tags]    debhello    build    source
@@ -183,3 +209,8 @@ DSC File Is Signed
     [Documentation]    Verify the .dsc file carries a valid GPG signature.
     [Tags]    debhello    build    signature    source
     Verify DSC Signature    ${WORKSPACE}    ${KEYS_DIR}    ${CONTAINER_IMAGE}
+
+Source Package Is Installable
+    [Documentation]    Verify the source package (.dsc + tarballs) can be extracted by dpkg-source on a clean Debian image.
+    [Tags]    debhello    install    source
+    Verify Source Package Artifacts    ${WORKSPACE}    ${DEBIAN_IMAGE}
