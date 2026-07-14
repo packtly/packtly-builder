@@ -23,6 +23,9 @@
     "[just]": {
         "editor.defaultFormatter": "TobiasHochguertel.just-formatter"
     },
+    "[robotframework]": {
+        "editor.defaultFormatter": "d-biehl.robotcode",
+    },
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "coverage-gutters.showGutterCoverage": true,
     "coverage-gutters.showLineCoverage": true,
