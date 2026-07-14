@@ -214,6 +214,20 @@ shell: _require-tools
         exit "$rc"
     fi
 
+# --- Robot Framework linting ---
+
+# Install robocop linter (own pipx venv, independent of the RF test runner)
+install-robocop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! pipx list --short | grep -q 'robotframework-robocop'; then
+        pipx install robotframework-robocop
+    fi
+
+# Lint Robot Framework files with robocop
+lint-robot: install-robocop
+    robocop check test/robot
+
 # --- Pipeline ---
 
 clean: _require-tools

@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "packtly_builder_tooling",
+            "label": "container: tooling just recipe",
             "type": "shell",
             "command": "just",
             "args": [
@@ -15,15 +15,7 @@
             "problemMatcher": []
         },
         {
-            "label": "run robot tests",
-            "type": "shell",
-            "command": "${workspaceFolder}/test/robot/run.sh",
-            "problemMatcher": [
-                "$python"
-            ]
-        },
-        {
-            "label": "packtly_build_full",
+            "label": "container: tooling full",
             "type": "shell",
             "command": "/opt/venv/bin/python",
             "args": [
@@ -41,7 +33,7 @@
             "problemMatcher": []
         },
         {
-            "label": "packtly_upload",
+            "label": "container: tooling upload",
             "type": "shell",
             "command": "/opt/venv/bin/python",
             "args": [
@@ -57,6 +49,26 @@
             ],
             "options": {
                 "cwd": "${workspaceFolder}/packtly-builder/tooling"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "host: run robot tests",
+            "type": "shell",
+            "command": "${workspaceFolder}/test/robot/run.sh",
+            "problemMatcher": [
+                "$python"
+            ]
+        },
+        {
+            "label": "host: run just recipe",
+            "type": "shell",
+            "command": "just",
+            "args": [
+                "${input:justRecipeHost}"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": []
         }
@@ -75,6 +87,32 @@
                 "prepare",
                 "pytest",
                 "test_keys"
+            ],
+            "default": "default"
+        },
+        {
+            "id": "justRecipeHost",
+            "type": "pickString",
+            "description": "Choose a top-level just recipe to run on the host",
+            "options": [
+                "all",
+                "build-base",
+                "build-builder",
+                "build-builder-multiarch",
+                "build-devcontainer",
+                "build-runtime",
+                "build-runtime-multiarch",
+                "build-tooling",
+                "clean",
+                "clean-base",
+                "clean-builder",
+                "clean-containers",
+                "clean-devcontainer",
+                "clean-runtime",
+                "install-robocop",
+                "lint-robot",
+                "test-tooling",
+                "test-tooling-keys"
             ],
             "default": "default"
         }

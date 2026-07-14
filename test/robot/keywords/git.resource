@@ -1,8 +1,11 @@
 *** Settings ***
+Documentation    Keywords for interacting with Git repositories in integration tests.
 Library    Process
+
 
 *** Keywords ***
 Checkout Repository
+    [Documentation]    Checkout a git repository to a given path.
     [Arguments]    ${url}    ${path}    ${branch}=main
 
     ${result}=    Run Process

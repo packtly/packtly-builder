@@ -1,10 +1,12 @@
 *** Settings ***
+Documentation    Keywords for generating Aptly credentials used in integration tests.
 Library    OperatingSystem
+
 
 *** Keywords ***
 Generate Aptly Credentials
-    [Arguments]
-    ...    ${path}
+    [Documentation]    Generate a simple aptly credentials file
+    [Arguments]    ${path}
     ...    ${username}=admin
     ...    ${password}=password
 
