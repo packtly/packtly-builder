@@ -1,0 +1,27 @@
+version: "4"
+services:
+  packtly:
+    image: ghcr.io/packtly/packtly-infra:1.1.0
+    networks:
+      - packtlynet
+    volumes:
+      - packtly_data:/opt/packtly
+    secrets:
+      - packtly_gpg_private_key
+      - packtly_gpg_passphrase
+
+secrets:
+  packtly_gpg_private_key:
+    external: true
+  packtly_gpg_passphrase:
+    external: true
+
+volumes:
+  packtly_data:
+    external: true
+    name: robot_debhello_aptly_data
+
+networks:
+  packtlynet:
+    driver: bridge
+    name: robot_debhello_aptly_net
