@@ -75,7 +75,7 @@ def is_already_deployed(
         if aptmanager.upstream_file_exists(Path(f), source_host=aptlyhost):
             logger.info("[EXISTS]   %s is already deployed upstream", Path(f).name)
         else:
-            logger.warning("[MISSING]  %s is not deployed upstream", Path(f).name)
+            logger.info("[NEW] %s is not deployed upstream", Path(f).name)
             upstream_exists = False
 
     if not upstream_exists:
