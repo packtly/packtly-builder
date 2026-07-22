@@ -16,6 +16,10 @@ RegEx for release version from file
 r"^\#\# \[\d{1,}[.]\d{1,}[.]\d{1,}\] \- \d{4}\-\d{2}-\d{2}$"
 -->
 
+## [1.3.1] - 2026-07-22
+### Fixed
+- Change log level from warning to info for missing upstream files in is_already_deployed function
+
 ## [1.3.0] - 2026-07-13
 ### Added
 - Robot Framework integration test environment for end-to-end validation of packtly-builder builds via Podman
