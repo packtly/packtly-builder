@@ -2,5 +2,19 @@
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "extends": [
         "config:recommended"
+    ],
+    "customManagers": [
+        {
+            "customType": "regex",
+            "managerFilePatterns": [
+                "/^\\.github/workflows/_build-(builder|runtime)-image\\.yml$/"
+            ],
+            "matchStrings": [
+                "runner: ubuntu-(?<currentValue>[0-9]+\\.[0-9]+(?:-arm)?)"
+            ],
+            "depNameTemplate": "ubuntu",
+            "datasourceTemplate": "github-runners",
+            "versioningTemplate": "docker"
+        }
     ]
 }
