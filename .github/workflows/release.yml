@@ -45,7 +45,7 @@ jobs:
           podman push "${IMAGE}:${VERSION}"
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.context.outputs.release_version }}
           name: Release ${{ steps.context.outputs.release_version }}
