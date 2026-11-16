@@ -9,7 +9,7 @@ on:
 
 jobs:
   version:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     outputs:
       release_version: ${{ steps.context.outputs.release_version }}
